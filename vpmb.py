@@ -846,9 +846,9 @@ class DiveState(object):
         Purpose: This subprogram calculates the initial allowable gradients for
         helium and nitrogen in each compartment.  These are the gradients that
         will be used to set the deco ceiling on the first pass through the deco
-        loop.  If the Critical Volume Algorithm is set to "off", then these
+        loop.  If the Critical Volume Algorithm is set to False, then these
         gradients will determine the final deco schedule.  Otherwise, if the
-        Critical Volume Algorithm is set to "on", these gradients will be further
+        Critical Volume Algorithm is set to True, these gradients will be further
         "relaxed" by the Critical Volume Algorithm subroutine.  The initial
         allowable gradients are referred to as "PssMin" in the papers by Yount
         and colleagues, i.e., the minimum supersaturation pressure gradients
@@ -1519,19 +1519,19 @@ class DiveState(object):
             self.Initial_Critical_Radius_N2[i] = self.settings_values["Critical_Radius_N2_Microns"] * 1.0E-6
             self.Initial_Critical_Radius_He[i] = self.settings_values["Critical_Radius_He_Microns"] * 1.0E-6
 
-        if self.settings_values['Critical_Volume_Algorithm'].lower() == "on":
+        if self.settings_values['Critical_Volume_Algorithm'] == True:
             self.Critical_Volume_Algorithm_Off = False
-        elif self.settings_values['Critical_Volume_Algorithm'].lower() == "off":
+        elif self.settings_values['Critical_Volume_Algorithm'] == False:
             self.Critical_Volume_Algorithm_Off = True
         else:
             raise ValueError("Bad Critical Volume Algorithm: Critical_Volume_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values["Critical_Volume_Algorithm"])
 
-        if self.settings_values["Altitude_Dive_Algorithm"].lower() == "on":
+        if self.settings_values["Altitude_Dive_Algorithm"] == True:
             self.Altitude_Dive_Algorithm_Off = False
             if self.altitude_values["Ascent_to_Altitude_Hours"] <= 0 and self.Diver_Acclimatized is False:
                 raise AltitudeException("If diver is not acclimatized, Ascent_to_Altitude_Time must be greater than 0")
 
-        elif self.settings_values["Altitude_Dive_Algorithm"].lower() == "off":
+        elif self.settings_values["Altitude_Dive_Algorithm"] == False:
             self.Altitude_Dive_Algorithm_Off = True
         else:
             raise ValueError("Bad Altitude Dive Algorithm: Altitude_Dive_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values["Altitude_Dive_Algorithm"])
@@ -1787,7 +1787,7 @@ class DiveState(object):
         """
         Purpose:
         If the Critical Volume
-        Algorithm is toggled "off" in the program settings, there will only be
+        Algorithm is toggled False in the program settings, there will only be
         one pass through this loop.  Otherwise, there will be two or more passes
         through this loop until the deco schedule is "converged" - that is when a
         comparison between the phase volume time of the present iteration and the
@@ -1907,21 +1907,21 @@ class DiveState(object):
                     self.Schedule_Converged = True
 
             # There are two options here.  If the Critical Volume Algorithm setting is
-            # "on" and the schedule is converged, or the Critical Volume Algorithm
-            # setting was "off" in the first place, the program will re-assign variables
+            # True and the schedule is converged, or the Critical Volume Algorithm
+            # setting was False in the first place, the program will re-assign variables
             # to their values at the start of ascent (end of bottom time) and process
             # a complete decompression schedule once again using all the same ascent
             # parameters and first stop depth.  This decompression schedule will match
             # the last iteration of the Critical Volume Loop and the program will write
             # the final deco schedule to the output file.
 
-            # Note: if the Critical Volume Algorithm setting was "off", the final deco
+            # Note: if the Critical Volume Algorithm setting was False, the final deco
             # schedule will be based on "Initial Allowable Supersaturation Gradients."
-            # If it was "on", the final schedule will be based on "Adjusted Allowable
+            # If it was True, the final schedule will be based on "Adjusted Allowable
             # Supersaturation Gradients" (gradients that are "relaxed" as a result of
             # the Critical Volume Algorithm).
 
-            # If the Critical Volume Algorithm setting is "on" and the schedule is not
+            # If the Critical Volume Algorithm setting is True and the schedule is not
             # converged, the program will re-assign variables to their values at the
             # start of the deco zone and process another trial decompression schedule.
 
