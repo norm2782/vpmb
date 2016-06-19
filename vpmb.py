@@ -28,6 +28,7 @@
 # import pycallgraph
 
 import json
+from enum import Enum, unique
 from math import log, trunc, exp, sqrt
 import datetime
 import argparse
@@ -95,29 +96,106 @@ class OffGassingException(Exception):
     def __str__(self):
         return repr(self.value)
 
+# enum DiveError : ErrorType {
+    # case AltitudeException(String) // Thrown when altitude is invalid, or diver acclimatized is invalid
+    # case MaxIterationException(String) // Thrown when root finding fails
+    # case DecompressionStepException(String) // Thrown when the decompression step is too large
+    # case RootException(String) // Thrown when root calculated is not within brackets
+    # case OffGassingException(String) // Thrown when Off Gassing gradient is too small
+    # case ValueError(String)
+    # case InputFileException(String)
+# }
+
+@unique
+class Gas(Enum):
+    Oxygen   = 1
+    Helium   = 2
+    Nitrogen = 4
+
+@unique
+class UnitsSW(Enum):
+    FSW = 1
+    MSW = 2
+
+    @staticmethod
+    def fromString(str):
+        if str == "fsw":
+            return UnitsSW.FSW
+        else:
+            return UnitsSW.MSW
+
+    def __str__(self):
+        if self == UnitsSW.FSW:
+            return "FSW"
+        else:
+            return "MSW"
+
+class Dive(object):
+    desc = ""
+    gasmix_summary = []
+    num_gas_mixes = 1
+    profile_codes = []
+    repetitive_code = 0
+    surface_interval_time_minutes = 0.0
+
+class GasMix(object):
+    fraction_He = 0.0
+    fraction_N2 = 79.0
+    fraction_O2 = 21.0
+
+    def __eq__(self, other):
+        return self.fraction_O2 == other.fraction_O2 and self.fraction_N2 == other.fraction_N2 and self.fraction_He == other.fraction_He
+
+class Profile(object):
+    ascent_summary = []
+    depth = 0.0
+    ending_depth = 0.0
+    gasmix = 0
+    number_of_ascent_parameter_changes = 0
+    profile_code = 1
+    rate = 0.0
+    run_time_at_end_of_segment = 0.0
+    setpoint = 0.0
+    starting_depth = 0.0
+
+class Ascent(object):
+    gasmix = 0
+    rate = 0.0
+    setpoint = 0.0
+    starting_depth = 0.0
+    step_size = 0.0
+
+class AltitudeValues(object):
+    altitude = 0.0
+    Ascent_to_Altitude_Hours = 0.0
+    Altitude_of_Dive = 0.0
+    Diver_Acclimatized_at_Altitude = False
+    Hours_at_Altitude_Before_Dive = 0.0
+    Starting_Acclimatized_Altitude = 0.0
+
+class SettingsValues(object):
+    Altitude_Dive_Algorithm = False
+    Critical_Radius_N2_Microns = 0.0
+    Critical_Radius_He_Microns = 0.0
+    Crit_Volume_Parameter_Lambda = 0.0
+    Critical_Volume_Algorithm = False
+    Gradient_Onset_of_Imperm_Atm = 0.0
+    Minimum_Deco_Stop_Time = 0.0
+    Pressure_Other_Gases_mmHg = 0.0
+    Regeneration_Time_Constant = 0.0
+    Surface_Tension_Gamma = 0.0
+    Skin_Compression_GammaC = 0.0
+    Units = UnitsSW.MSW
 
 class DiveState(object):
     """Contains the program state so that this isn't a huge mess"""
 
-    def __init__(self, input_file_name=None, json_input=None):
-        """Take the input_file_name  parsed by parse_settings or raw json data
-        and use it to initialize the program state"""
+    input_values = []
+    settings_values = None
+    altitude_values = None
 
-        if input_file_name is None and json_input is None:
-            raise ValueError("""DiveState must be given a file name (to load the input from), or
-            raw json data""")
-
-        if json_input:
-            data = json_input
-        else:
-            # load the file data
-            with open(input_file_name) as input_file:
-                data = json.loads(input_file.read())
-
-        self.input_values = data["input"]
-        self.settings_values = data["settings"]
-        self.altitude_values = data["altitude"]
-        self.output_object = HtmlOutput(self)
+    def __init__(self):
+        """Set default values"""
 
         # init the instance variables
         # strings
@@ -245,14 +323,122 @@ class DiveState(object):
         self.Amb_Pressure_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
         self.Gas_Tension_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
 
-        self.Diver_Acclimatized = None
-
         # ASSIGN HALF-TIME VALUES TO BUHLMANN COMPARTMENT ARRAYS
         self.Helium_Half_Time = [1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20,
                                  55.19, 70.69, 90.34, 115.29, 147.42, 188.24, 240.03]
 
         self.Nitrogen_Half_Time = [5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0,
                                    146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0]
+
+    def data_to_profiles(self, profile_data):
+        profiles = []
+
+        for profile in profile_data:
+            new_profile = Profile()
+
+            ascent_sums = []
+
+            for asc_sum_data in profile.get("ascent_summary", []):
+                asc_sum = Ascent()
+                asc_sum.gasmix = asc_sum_data["gasmix"]
+                asc_sum.rate = asc_sum_data["rate"]
+                asc_sum.setpoint = asc_sum_data["setpoint"]
+                asc_sum.starting_depth = asc_sum_data["starting_depth"]
+                asc_sum.step_size = asc_sum_data["step_size"]
+                ascent_sums.append(asc_sum)
+
+            new_profile.ascent_summary = ascent_sums
+            new_profile.depth = profile.get("depth", 0.0)
+            new_profile.ending_depth = profile.get("ending_depth", 0.0)
+            new_profile.gasmix = profile.get("gasmix", 0)
+            new_profile.number_of_ascent_parameter_changes = profile.get("number_of_ascent_parameter_changes", 0)
+            new_profile.profile_code = profile.get("profile_code", 0)
+            new_profile.rate = profile.get("rate", 0.0)
+            new_profile.run_time_at_end_of_segment = profile.get("run_time_at_end_of_segment", 0.0)
+            new_profile.setpoint = profile.get("setpoint", 0.0)
+            new_profile.starting_depth = profile.get("starting_depth", 0.0)
+
+            profiles.append(new_profile)
+
+        return profiles
+
+    def data_to_gasmix_summary(self, gas_data):
+        summaries = []
+
+        for summary_data in gas_data:
+            mix = GasMix()
+            mix.fraction_He = summary_data["fraction_He"]
+            mix.fraction_N2 = summary_data["fraction_N2"]
+            mix.fraction_O2 = summary_data["fraction_O2"]
+            summaries.append(mix)
+
+        return summaries
+
+
+    def data_to_input(self, data):
+        all_dives = []
+
+        for dive_data in data["input"]:
+            dive = Dive()
+            dive.desc = dive_data.get("desc", "")
+            dive.gasmix_summary = self.data_to_gasmix_summary(dive_data["gasmix_summary"])
+            dive.num_gas_mixes = dive_data.get("num_gas_mixes", 0)
+            dive.profile_codes = self.data_to_profiles(dive_data["profile_codes"])
+            dive.repetitive_code = dive_data.get("repetitive_code", 0)
+            dive.surface_interval_time_minutes = dive_data.get("surface_interval_time_minutes", 0.0)
+            all_dives.append(dive)
+
+        return all_dives
+
+    def data_to_settings(self, data):
+        settings = SettingsValues()
+        settings.Altitude_Dive_Algorithm = data["settings"]["Altitude_Dive_Algorithm"]
+        settings.Crit_Volume_Parameter_Lambda = data["settings"]["Crit_Volume_Parameter_Lambda"]
+        settings.Critical_Radius_He_Microns = data["settings"]["Critical_Radius_He_Microns"]
+        settings.Critical_Radius_N2_Microns = data["settings"]["Critical_Radius_N2_Microns"]
+        settings.Critical_Volume_Algorithm = data["settings"]["Critical_Volume_Algorithm"]
+        settings.Gradient_Onset_of_Imperm_Atm = data["settings"]["Gradient_Onset_of_Imperm_Atm"]
+        settings.Minimum_Deco_Stop_Time = data["settings"]["Minimum_Deco_Stop_Time"]
+        settings.Pressure_Other_Gases_mmHg = data["settings"]["Pressure_Other_Gases_mmHg"]
+        settings.Regeneration_Time_Constant = data["settings"]["Regeneration_Time_Constant"]
+        settings.Skin_Compression_GammaC = data["settings"]["Skin_Compression_GammaC"]
+        settings.Surface_Tension_Gamma = data["settings"]["Surface_Tension_Gamma"]
+        settings.Units = UnitsSW.fromString(data["settings"]["Units"])
+
+        return settings
+
+    def data_to_altitude(self, data):
+        alt_vals = AltitudeValues()
+        alt_vals.Ascent_to_Altitude_Hours = data["altitude"]["Ascent_to_Altitude_Hours"]
+        alt_vals.Altitude_of_Dive = data["altitude"]["Altitude_of_Dive"]
+        alt_vals.Diver_Acclimatized_at_Altitude = data["altitude"]["Diver_Acclimatized_at_Altitude"] == "yes"
+        alt_vals.Hours_at_Altitude_Before_Dive = data["altitude"]["Hours_at_Altitude_Before_Dive"]
+        alt_vals.Starting_Acclimatized_Altitude = data["altitude"]["Starting_Acclimatized_Altitude"]
+
+        return alt_vals
+
+    def load_external_data(self, input_file_name=None, json_input=None):
+        """Take the input_file_name  parsed by parse_settings or raw json data and use it to initialize the program state"""
+
+        if input_file_name is None and json_input is None:
+            raise ValueError("""DiveState must be given a file name (to load the input from), or raw json data""")
+
+        if json_input:
+            data = json_input
+        else:
+            # load the file data
+            with open(input_file_name) as input_file:
+                data = json.loads(input_file.read())
+
+
+        # self.input_values = self.data_to_input(data)
+        self.input_values = data["input"]
+        self.settings_values = self.data_to_settings(data)
+        self.altitude_values = self.data_to_altitude(data)
+        self.output_object = HtmlOutput(self)
+
+    def set_settings(self, settings):
+        self.settings_values = settings
 
     def get_json(self):
         return self.output_object.get_json()
@@ -382,11 +568,11 @@ class DiveState(object):
         Returns: None
         """
 
-        ascent_to_altitude_time = altitude_settings['Ascent_to_Altitude_Hours'] * 60.0
-        time_at_altitude_before_dive = altitude_settings['Hours_at_Altitude_Before_Dive'] * 60.0
+        ascent_to_altitude_time = altitude_settings.Ascent_to_Altitude_Hours * 60.0
+        time_at_altitude_before_dive = altitude_settings.Hours_at_Altitude_Before_Dive * 60.0
 
-        if self.Diver_Acclimatized:
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings['Altitude_of_Dive'], self.units_fsw)
+        if self.altitude_values.Diver_Acclimatized_at_Altitude:
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.units_fsw)
 
             for i in range(ARRAY_LENGTH):
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
@@ -394,10 +580,10 @@ class DiveState(object):
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
         else:
-            if (altitude_settings['Starting_Acclimatized_Altitude'] >= altitude_settings['Altitude_of_Dive']) or (altitude_settings['Starting_Acclimatized_Altitude'] < 0.0):
+            if (altitude_settings.Starting_Acclimatized_Altitude >= altitude_settings.Altitude_of_Dive) or (altitude_settings.Starting_Acclimatized_Altitude < 0.0):
                 raise AltitudeException("ERROR! STARTING ACCLIMATIZED ALTITUDE MUST BE LESS THAN ALTITUDE OF DIVE AND GREATER THAN OR EQUAL TO ZERO")
 
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings['Starting_Acclimatized_Altitude'], self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Starting_Acclimatized_Altitude, self.units_fsw)
 
             starting_ambient_pressure = self.Barometric_Pressure
 
@@ -405,7 +591,7 @@ class DiveState(object):
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
 
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings['Altitude_of_Dive'], self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.units_fsw)
             ending_ambient_pressure = self.Barometric_Pressure
             initial_inspired_n2_pressure = (starting_ambient_pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
             rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
@@ -569,8 +755,8 @@ class DiveState(object):
         # how it was reported in the original research papers by Yount and
         # colleagues.
 
-        gradient_onset_of_imperm = self.settings_values['Gradient_Onset_of_Imperm_Atm'] * self.Units_Factor  # convert to diving units
-        gradient_onset_of_imperm_pa = self.settings_values['Gradient_Onset_of_Imperm_Atm'] * self.ATM     # convert to Pascals
+        gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.Units_Factor  # convert to diving units
+        gradient_onset_of_imperm_pa = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.ATM     # convert to Pascals
 
         # Assign values of starting and ending ambient pressures for descent segment
 
@@ -597,9 +783,9 @@ class DiveState(object):
             # Compute radius at onset of impermeability for helium and nitrogen
             # critical radii
 
-            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
 
-            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
 
             # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
             # Crushing pressures will be the same for helium and nitrogen
@@ -808,18 +994,18 @@ class DiveState(object):
 
             crushing_pressure_pascals_n2 = (self.Max_Crushing_Pressure_N2[i] / self.Units_Factor) * self.ATM
 
-            ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+            ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
 
-            ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+            ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
             # A "regenerated" radius for each nucleus is now calculated based on the
             # regeneration time constant.  This means that after application of
             # crushing pressure and reduction in radius, a nucleus will slowly grow
             # back to its original initial radius over a period of time.  This
             # phenomenon is probabilistic in nature and depends on absolute temperature.
             # It is independent of crushing pressure.
-            self.Regenerated_Radius_He[i] = self.Adjusted_Critical_Radius_He[i] + (ending_radius_he - self.Adjusted_Critical_Radius_He[i]) * exp(-dive_time / self.settings_values['Regeneration_Time_Constant'])
+            self.Regenerated_Radius_He[i] = self.Adjusted_Critical_Radius_He[i] + (ending_radius_he - self.Adjusted_Critical_Radius_He[i]) * exp(-dive_time / self.settings_values.Regeneration_Time_Constant)
 
-            self.Regenerated_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - self.Adjusted_Critical_Radius_N2[i]) * exp(-dive_time / self.settings_values['Regeneration_Time_Constant'])
+            self.Regenerated_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - self.Adjusted_Critical_Radius_N2[i]) * exp(-dive_time / self.settings_values.Regeneration_Time_Constant)
 
             # In order to preserve reference back to the initial critical radii after
             # regeneration, an "adjusted crushing pressure" for the nuclei in each
@@ -878,9 +1064,9 @@ class DiveState(object):
         # Volume subroutine and the VPM Repetitive Algorithm subroutine.
 
         for i in range(ARRAY_LENGTH):
-            initial_allowable_grad_n2_pa = ((2.0 * self.settings_values['Surface_Tension_Gamma'] * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) / (self.Regenerated_Radius_N2[i] * self.settings_values['Skin_Compression_GammaC']))
+            initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
 
-            initial_allowable_grad_he_pa = ((2.0 * self.settings_values['Surface_Tension_Gamma'] * (self.settings_values['Skin_Compression_GammaC'] - self.settings_values['Surface_Tension_Gamma'])) / (self.Regenerated_Radius_He[i] * self.settings_values['Skin_Compression_GammaC']))
+            initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
 
             self.Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / self.ATM) * self.Units_Factor
             self.Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / self.ATM) * self.Units_Factor
@@ -1381,7 +1567,6 @@ class DiveState(object):
         Side Effects: Sets
         `self.Critical_Radius_He_Microns`
         `self.Critical_Radius_N2_Microns`,
-        `self.Diver_Acclimatized`,
         `self.units_fsw`,
 
         or
@@ -1390,39 +1575,30 @@ class DiveState(object):
 
         Returns: None
         """
-        if self.settings_values["Units"].lower() == "fsw":
+        if self.settings_values.Units == UnitsSW.FSW:
             self.units_fsw = True
-        elif self.settings_values["Units"].lower() == "msw":
-            self.units_fsw = False
         else:
-            raise ValueError("Bad Unit of measurement: Units = %s, must be 'fsw' or 'msw'" % self.settings_values["Units"])
+            self.units_fsw = False
 
-        if self.settings_values["Regeneration_Time_Constant"] <= 0:
+        if self.settings_values.Regeneration_Time_Constant <= 0:
             raise InputFileException("Regeneration_Time_Constant must be greater than 0")
 
-        if self.units_fsw and self.altitude_values['Altitude_of_Dive'] > 30000.0:
+        if self.units_fsw and self.altitude_values.Altitude_of_Dive > 30000.0:
             raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
 
-        if (not self.units_fsw) and self.altitude_values['Altitude_of_Dive'] > 9144.0:
+        if (not self.units_fsw) and self.altitude_values.Altitude_of_Dive > 9144.0:
             raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
 
-        if self.altitude_values['Diver_Acclimatized_at_Altitude'].lower() == 'yes':
-            self.Diver_Acclimatized = True
-        elif self.altitude_values['Diver_Acclimatized_at_Altitude'].lower() == 'no':
-            self.Diver_Acclimatized = False
-        else:
-            raise AltitudeException("ERROR! DIVER ACCLIMATIZED AT ALTITUDE MUST BE YES OR NO")
-
-        self.Critical_Radius_N2_Microns = self.settings_values['Critical_Radius_N2_Microns']
-        self.Critical_Radius_He_Microns = self.settings_values['Critical_Radius_He_Microns']
+        self.Critical_Radius_N2_Microns = self.settings_values.Critical_Radius_N2_Microns
+        self.Critical_Radius_He_Microns = self.settings_values.Critical_Radius_He_Microns
 
         # nitrogen
-        if self.settings_values['Critical_Radius_N2_Microns'] < 0.2 or self.settings_values['Critical_Radius_N2_Microns'] > 1.35:
-            raise ValueError("Bad Critical Radius N2 Microns: Critical_Radius_N2_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values["Critical_Radius_N2_Microns"])
+        if self.settings_values.Critical_Radius_N2_Microns < 0.2 or self.settings_values.Critical_Radius_N2_Microns > 1.35:
+            raise ValueError("Bad Critical Radius N2 Microns: Critical_Radius_N2_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_N2_Microns)
 
         # helium
-        if self.settings_values['Critical_Radius_He_Microns'] < 0.2 or self.settings_values['Critical_Radius_He_Microns'] > 1.35:
-            raise ValueError("Bad Critical_Radius_He_Microns: Critical_Radius_He_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values["Critical_Radius_He_Microns"])
+        if self.settings_values.Critical_Radius_He_Microns < 0.2 or self.settings_values.Critical_Radius_He_Microns > 1.35:
+            raise ValueError("Bad Critical_Radius_He_Microns: Critical_Radius_He_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_He_Microns)
 
     def initialize_data(self):
         """
@@ -1473,18 +1649,18 @@ class DiveState(object):
 
         Returns: None
         """
-        self.Surface_Tension_Gamma = self.settings_values['Surface_Tension_Gamma']
-        self.Skin_Compression_GammaC = self.settings_values['Skin_Compression_GammaC']
-        self.Crit_Volume_Parameter_Lambda = self.settings_values['Crit_Volume_Parameter_Lambda']
-        self.Gradient_Onset_of_Imperm_Atm = self.settings_values['Gradient_Onset_of_Imperm_Atm']
+        self.Surface_Tension_Gamma = self.settings_values.Surface_Tension_Gamma
+        self.Skin_Compression_GammaC = self.settings_values.Skin_Compression_GammaC
+        self.Crit_Volume_Parameter_Lambda = self.settings_values.Crit_Volume_Parameter_Lambda
+        self.Gradient_Onset_of_Imperm_Atm = self.settings_values.Gradient_Onset_of_Imperm_Atm
 
-        self.Minimum_Deco_Stop_Time = self.settings_values['Minimum_Deco_Stop_Time']
-        self.Critical_Radius_N2_Microns = self.settings_values['Critical_Radius_N2_Microns']
-        self.Critical_Radius_He_Microns = self.settings_values['Critical_Radius_He_Microns']
-        self.Regeneration_Time_Constant = self.settings_values['Regeneration_Time_Constant']
+        self.Minimum_Deco_Stop_Time = self.settings_values.Minimum_Deco_Stop_Time
+        self.Critical_Radius_N2_Microns = self.settings_values.Critical_Radius_N2_Microns
+        self.Critical_Radius_He_Microns = self.settings_values.Critical_Radius_He_Microns
+        self.Regeneration_Time_Constant = self.settings_values.Regeneration_Time_Constant
 
-        self.Surface_Tension_Gamma = self.settings_values['Surface_Tension_Gamma']
-        self.Minimum_Deco_Stop_Time = self.settings_values['Minimum_Deco_Stop_Time']
+        self.Surface_Tension_Gamma = self.settings_values.Surface_Tension_Gamma
+        self.Minimum_Deco_Stop_Time = self.settings_values.Minimum_Deco_Stop_Time
 
         # INITIALIZE CONSTANTS/VARIABLES BASED ON SELECTION OF UNITS - FSW OR MSW
         # fsw = feet of seawater, a unit of pressure
@@ -1503,7 +1679,7 @@ class DiveState(object):
             self.Water_Vapor_Pressure = 0.493     # based on respiratory quotient of 0.8 (Schreiner value)
 
         # INITIALIZE CONSTANTS/VARIABLES
-        self.Constant_Pressure_Other_Gases = (self.settings_values["Pressure_Other_Gases_mmHg"] / 760.0) * self.Units_Factor
+        self.Constant_Pressure_Other_Gases = (self.settings_values.Pressure_Other_Gases_mmHg / 760.0) * self.Units_Factor
         self.Run_Time = 0.0
         self.Segment_Number = 0
 
@@ -1516,25 +1692,25 @@ class DiveState(object):
             self.Surface_Phase_Volume_Time[i] = 0.0
             self.Amb_Pressure_Onset_of_Imperm[i] = 0.0
             self.Gas_Tension_Onset_of_Imperm[i] = 0.0
-            self.Initial_Critical_Radius_N2[i] = self.settings_values["Critical_Radius_N2_Microns"] * 1.0E-6
-            self.Initial_Critical_Radius_He[i] = self.settings_values["Critical_Radius_He_Microns"] * 1.0E-6
+            self.Initial_Critical_Radius_N2[i] = self.settings_values.Critical_Radius_N2_Microns * 1.0E-6
+            self.Initial_Critical_Radius_He[i] = self.settings_values.Critical_Radius_He_Microns * 1.0E-6
 
-        if self.settings_values['Critical_Volume_Algorithm'] == True:
+        if self.settings_values.Critical_Volume_Algorithm == True:
             self.Critical_Volume_Algorithm_Off = False
-        elif self.settings_values['Critical_Volume_Algorithm'] == False:
+        elif self.settings_values.Critical_Volume_Algorithm == False:
             self.Critical_Volume_Algorithm_Off = True
         else:
-            raise ValueError("Bad Critical Volume Algorithm: Critical_Volume_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values["Critical_Volume_Algorithm"])
+            raise ValueError("Bad Critical Volume Algorithm: Critical_Volume_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values.Critical_Volume_Algorithm)
 
-        if self.settings_values["Altitude_Dive_Algorithm"] == True:
+        if self.settings_values.Altitude_Dive_Algorithm == True:
             self.Altitude_Dive_Algorithm_Off = False
-            if self.altitude_values["Ascent_to_Altitude_Hours"] <= 0 and self.Diver_Acclimatized is False:
+            if self.altitude_values.Ascent_to_Altitude_Hours <= 0 and self.altitude_values.Diver_Acclimatized_at_Altitude is False:
                 raise AltitudeException("If diver is not acclimatized, Ascent_to_Altitude_Time must be greater than 0")
 
-        elif self.settings_values["Altitude_Dive_Algorithm"] == False:
+        elif self.settings_values.Altitude_Dive_Algorithm == False:
             self.Altitude_Dive_Algorithm_Off = True
         else:
-            raise ValueError("Bad Altitude Dive Algorithm: Altitude_Dive_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values["Altitude_Dive_Algorithm"])
+            raise ValueError("Bad Altitude Dive Algorithm: Altitude_Dive_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values.Altitude_Dive_Algorithm)
 
         #     INITIALIZE VARIABLES FOR SEA LEVEL OR ALTITUDE DIVE
         #     See subroutines for explanation of altitude calculations.  Purposes are

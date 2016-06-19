@@ -28,7 +28,8 @@ def load_and_check_file(input_file, expected_results):
     j = json.loads(f.read())
     f.close()
     
-    program_state = vpmb.DiveState(json_input=j)
+    program_state = vpmb.DiveState()
+    program_state.load_external_data(json_input=j)
     program_state.main()
     results = program_state.get_json()
     
@@ -44,7 +45,9 @@ def load_and_return_program_state(input_file):
     j = json.loads(f.read())
     f.close()
     
-    return vpmb.DiveState(json_input=j)
+    program_state = vpmb.DiveState()
+    program_state.load_external_data(json_input=j)
+    return program_state
     
 class TestDiveResults(unittest.TestCase):
     
@@ -106,7 +109,8 @@ class TestDiveResults(unittest.TestCase):
 
     def test_load_from_file(self):
 
-        program_state = vpmb.DiveState(input_file_name="test1/vpm_decompression_input.json")
+        program_state = vpmb.DiveState()
+        program_state.load_external_data(input_file_name="test1/vpm_decompression_input.json")
         program_state.main()
         results = program_state.get_json()
     
@@ -144,7 +148,8 @@ class TestAltitudeConfigurations(unittest.TestCase):
 class TestGeneralExceptions(unittest.TestCase):
     
     def test_no_input_exception(self):
-        self.assertRaises(ValueError, vpmb.DiveState)
+        program_state = vpmb.DiveState()
+        self.assertRaises(ValueError, program_state.load_external_data)
 
     def test_gasmix_exception1(self):
         program_state = load_and_return_program_state("gasmix_exception1/vpm_decompression_input.json")
