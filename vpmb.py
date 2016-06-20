@@ -243,7 +243,7 @@ class VPMBJSONReader(object):
             dive.gasmix_summary = self.data_to_gasmix_summary(dive_data["gasmix_summary"])
             dive.num_gas_mixes = dive_data.get("num_gas_mixes", 0)
             dive.profile_codes = self.data_to_profiles(dive_data["profile_codes"])
-            dive.repetitive_code = dive_data.get("repetitive_code", 0)
+            dive.repetitive_code = dive_data.get("repetitive_code", 0) == 1
             dive.surface_interval_time_minutes = dive_data.get("surface_interval_time_minutes", 0.0)
             all_dives.append(dive)
 
@@ -2307,7 +2307,7 @@ class DiveState(object):
             # REPETITIVE DIVE.  IF NONE, THEN EXIT REPETITIVE LOOP.
             repetitive_dive_flag = dive.repetitive_code
 
-            if repetitive_dive_flag == 0:
+            if not dive.repetitive_code:
                 continue
 
             # IF THERE IS A REPETITIVE DIVE, COMPUTE GAS LOADINGS (OFF-GASSING) DURING
@@ -2315,7 +2315,7 @@ class DiveState(object):
             # ALGORITHM.  RE-INITIALIZE SELECTED VARIABLES AND RETURN TO START OF
             # REPETITIVE LOOP AT LINE 30.
 
-            elif repetitive_dive_flag == 1:
+            elif dive.repetitive_code:
                 self.Surface_Interval_Time = dive.surface_interval_time_minutes
 
                 self.gas_loadings_surface_interval(self.Surface_Interval_Time)
@@ -2559,7 +2559,6 @@ class HtmlOutput(object):
     def get_json(self):
         """Return the output JSON"""
         return self.output
-
 
 # functions
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):

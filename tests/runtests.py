@@ -169,10 +169,6 @@ class TestGeneralExceptions(unittest.TestCase):
         program_state = load_and_return_program_state("profile_code_exception1/vpm_decompression_input.json")
         self.assertRaises(vpmb.InputFileException, program_state.main)
 
-    def test_repetative_dive_code_exception1(self):
-        program_state = load_and_return_program_state("repetative_dive_code_exception1/vpm_decompression_input.json")
-        self.assertRaises(vpmb.InputFileException, program_state.main)
-
 
 if __name__ == '__main__':
     unittest.main()
