@@ -431,8 +431,7 @@ class DiveState(object):
                 data = json.loads(input_file.read())
 
 
-        # self.input_values = self.data_to_input(data)
-        self.input_values = data["input"]
+        self.input_values = self.data_to_input(data)
         self.settings_values = self.data_to_settings(data)
         self.altitude_values = self.data_to_altitude(data)
         self.output_object = HtmlOutput(self)
@@ -1745,16 +1744,16 @@ class DiveState(object):
 
         Returns: None
         """
-        num_gas_mixes = dive["num_gas_mixes"]
+        num_gas_mixes = dive.num_gas_mixes
         fraction_oxygen = [0.0] * num_gas_mixes
         self.Fraction_Helium = [0.0] * num_gas_mixes
         self.Fraction_Nitrogen = [0.0] * num_gas_mixes
 
         for i in range(num_gas_mixes):
-            gasmix_summary = dive["gasmix_summary"]
-            fraction_oxygen[i] = gasmix_summary[i]["fraction_O2"]
-            self.Fraction_Nitrogen[i] = gasmix_summary[i]["fraction_N2"]
-            self.Fraction_Helium[i] = gasmix_summary[i]["fraction_He"]
+            gasmix_summary = dive.gasmix_summary
+            fraction_oxygen[i] = gasmix_summary[i].fraction_O2
+            self.Fraction_Nitrogen[i] = gasmix_summary[i].fraction_N2
+            self.Fraction_Helium[i] = gasmix_summary[i].fraction_He
             sum_of_fractions = fraction_oxygen[i] + self.Fraction_Nitrogen[i] + self.Fraction_Helium[i]
 
             if sum_of_fractions != 1.0:
@@ -1793,14 +1792,14 @@ class DiveState(object):
 
         Returns: None
         """
-        for profile in dive["profile_codes"]:
-            profile_code = profile["profile_code"]
+        for profile in dive.profile_codes:
+            profile_code = profile.profile_code
 
             if profile_code == 1:
-                self.Starting_Depth = profile["starting_depth"]
-                self.Ending_Depth = profile["ending_depth"]
-                self.Rate = profile["rate"]
-                self.Mix_Number = profile["gasmix"]
+                self.Starting_Depth = profile.starting_depth
+                self.Ending_Depth = profile.ending_depth
+                self.Rate = profile.rate
+                self.Mix_Number = profile.gasmix
 
                 self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
                 if self.Ending_Depth > self.Starting_Depth:
@@ -1817,9 +1816,9 @@ class DiveState(object):
                 self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, self.Rate)
 
             elif profile_code == 2:
-                self.Depth = profile["depth"]
-                self.Run_Time_End_of_Segment = profile["run_time_at_end_of_segment"]
-                self.Mix_Number = profile["gasmix"]
+                self.Depth = profile.depth
+                self.Run_Time_End_of_Segment = profile.run_time_at_end_of_segment
+                self.Mix_Number = profile.gasmix
 
                 self.gas_loadings_constant_depth(self.Depth, self.Run_Time_End_of_Segment)
 
@@ -2184,21 +2183,21 @@ class DiveState(object):
         #     The user has the ability to change mix, ascent rate, and step size in any
         #     combination at any depth during the ascent.
 
-        for profile in dive["profile_codes"]:
-            profile_code = profile["profile_code"]
+        for profile in dive.profile_codes:
+            profile_code = profile.profile_code
 
             if profile_code == 99:
-                self.Number_of_Changes = profile["number_of_ascent_parameter_changes"]
+                self.Number_of_Changes = profile.number_of_ascent_parameter_changes
                 self.Depth_Change = [0.0] * self.Number_of_Changes
                 self.Mix_Change = [0.0] * self.Number_of_Changes
                 self.Rate_Change = [0.0] * self.Number_of_Changes
                 self.Step_Size_Change = [0.0] * self.Number_of_Changes
 
-                for i, ascents in enumerate(profile["ascent_summary"]):
-                    self.Depth_Change[i] = ascents["starting_depth"]
-                    self.Mix_Change[i] = ascents["gasmix"]
-                    self.Rate_Change[i] = ascents["rate"]
-                    self.Step_Size_Change[i] = ascents["step_size"]
+                for i, ascents in enumerate(profile.ascent_summary):
+                    self.Depth_Change[i] = ascents.starting_depth
+                    self.Mix_Change[i] = ascents.gasmix
+                    self.Rate_Change[i] = ascents.rate
+                    self.Step_Size_Change[i] = ascents.step_size
 
                 self.Starting_Depth = self.Depth_Change[0]
                 self.Mix_Number = self.Mix_Change[0]
@@ -2288,7 +2287,7 @@ class DiveState(object):
         # 30 and 330.  If there is one or more repetitive dives, the program will
         # return to this point to process each repetitive dive.
         for dive in self.input_values:
-            self.output_object.new_dive(dive["desc"])
+            self.output_object.new_dive(dive.desc)
 
             self.set_gas_mixes(dive)
             self.profile_code_loop(dive)
@@ -2296,7 +2295,7 @@ class DiveState(object):
 
             # PROCESSING OF DIVE COMPLETE.  READ INPUT FILE TO DETERMINE IF THERE IS A
             # REPETITIVE DIVE.  IF NONE, THEN EXIT REPETITIVE LOOP.
-            repetitive_dive_flag = dive["repetitive_code"]
+            repetitive_dive_flag = dive.repetitive_code
 
             if repetitive_dive_flag == 0:
                 continue
@@ -2307,7 +2306,7 @@ class DiveState(object):
             # REPETITIVE LOOP AT LINE 30.
 
             elif repetitive_dive_flag == 1:
-                self.Surface_Interval_Time = dive["surface_interval_time_minutes"]
+                self.Surface_Interval_Time = dive.surface_interval_time_minutes
 
                 self.gas_loadings_surface_interval(self.Surface_Interval_Time)
                 self.vpm_repetitive_algorithm(self.Surface_Interval_Time)
@@ -2407,9 +2406,9 @@ class HtmlOutput(object):
         return_string = ""
         return_string += "<p>"
 
-        return_string += dive["desc"]
+        return_string += dive.desc
         return_string += "<br/>"
-        return_string += dive["time"]
+        return_string += dive.time
         return_string += "<br/>"
         return_string += "Gasmix Summary"
         return_string += "</p>"
@@ -2423,7 +2422,7 @@ class HtmlOutput(object):
             </tr>
             """
 
-        for i, gas in enumerate(dive["gasmix"]):
+        for i, gas in enumerate(dive.gasmix):
             return_string += """<tr>
             <td>%d</td>
             <td>%5.3f</td>
@@ -2452,7 +2451,7 @@ class HtmlOutput(object):
         </tr>
         """ % (self.state_object.Units_Word1, self.state_object.Units_Word1, self.state_object.Units_Word2, self.state_object.Units_Word1)
 
-        for d in dive["dive_profile"]:
+        for d in dive.dive_profile:
             return_string += "<tr>"
             for elem in d:
                 return_string += "<td>%s</td>" % (str(elem))
@@ -2488,7 +2487,7 @@ class HtmlOutput(object):
         </tr>
         """ % (self.state_object.Units_Word1, self.state_object.Units_Word2, self.state_object.Units_Word1)
 
-        for d in dive["decompression_profile"]:
+        for d in dive.decompression_profile:
             return_string += "<tr>"
             for elem in d:
                 return_string += "<td>%s</td>" % (str(elem))
