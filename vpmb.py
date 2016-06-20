@@ -2303,19 +2303,12 @@ class DiveState(object):
             self.profile_code_loop(dive)
             self.decompression_loop(dive)
 
-            # PROCESSING OF DIVE COMPLETE.  READ INPUT FILE TO DETERMINE IF THERE IS A
-            # REPETITIVE DIVE.  IF NONE, THEN EXIT REPETITIVE LOOP.
-            repetitive_dive_flag = dive.repetitive_code
-
-            if not dive.repetitive_code:
-                continue
 
             # IF THERE IS A REPETITIVE DIVE, COMPUTE GAS LOADINGS (OFF-GASSING) DURING
             # SURFACE INTERVAL TIME.  ADJUST CRITICAL RADII USING VPM REPETITIVE
             # ALGORITHM.  RE-INITIALIZE SELECTED VARIABLES AND RETURN TO START OF
             # REPETITIVE LOOP AT LINE 30.
-
-            elif dive.repetitive_code:
+            if dive.repetitive_code:
                 self.Surface_Interval_Time = dive.surface_interval_time_minutes
 
                 self.gas_loadings_surface_interval(self.Surface_Interval_Time)
@@ -2332,8 +2325,10 @@ class DiveState(object):
                 # may not be needed anymore
                 continue
 
+            # PROCESSING OF DIVE COMPLETE.  READ INPUT FILE TO DETERMINE IF THERE IS A
+            # REPETITIVE DIVE.  IF NONE, THEN EXIT REPETITIVE LOOP.
             else:
-                raise InputFileException("Invalid repetitive dive flag %d. Must be 0 (don't repeat) or 1 (repeat)" % repetitive_dive_flag)
+                continue
 
         # pycallgraph.make_dot_graph('pycallgraph.png')
 
