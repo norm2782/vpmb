@@ -113,6 +113,21 @@ class Gas(Enum):
     Nitrogen = 4
 
 @unique
+class ProfileCode(Enum):
+    Descent  = 1
+    Constant = 2
+    Ascent   = 99
+
+    @staticmethod
+    def fromInt(i):
+        if i == 1:
+            return ProfileCode.Descent
+        elif i == 2:
+            return ProfileCode.Constant
+        else:
+            return ProfileCode.Ascent
+
+@unique
 class UnitsSW(Enum):
     FSW = 1
     MSW = 2
@@ -152,7 +167,7 @@ class Profile(object):
     ending_depth = 0.0
     gasmix = 0
     number_of_ascent_parameter_changes = 0
-    profile_code = 1
+    profile_code = ProfileCode.Descent
     rate = 0.0
     run_time_at_end_of_segment = 0.0
     setpoint = 0.0
@@ -211,7 +226,7 @@ class VPMBJSONReader(object):
             new_profile.ending_depth = profile.get("ending_depth", 0.0)
             new_profile.gasmix = profile.get("gasmix", 0)
             new_profile.number_of_ascent_parameter_changes = profile.get("number_of_ascent_parameter_changes", 0)
-            new_profile.profile_code = profile.get("profile_code", 0)
+            new_profile.profile_code = ProfileCode.fromInt(profile.get("profile_code", 1))
             new_profile.rate = profile.get("rate", 0.0)
             new_profile.run_time_at_end_of_segment = profile.get("run_time_at_end_of_segment", 0.0)
             new_profile.setpoint = profile.get("setpoint", 0.0)
@@ -297,10 +312,6 @@ class VPMBJSONReader(object):
 class DiveState(object):
     """Contains the program state so that this isn't a huge mess"""
 
-    input_values = []
-    settings_values = None
-    altitude_values = None
-
     def __init__(self):
         """Set default values"""
 
@@ -319,8 +330,6 @@ class DiveState(object):
 
         # bools
         self.Schedule_Converged = False
-        self.Critical_Volume_Algorithm_Off = False
-        self.Altitude_Dive_Algorithm_Off = False
 
         # floats
         self.Ascent_Ceiling_Depth = 0.0
@@ -396,7 +405,6 @@ class DiveState(object):
         self.Mix_Number = 0
         self.Barometric_Pressure = 0.0
 
-        self.units_fsw = False
         self.Units_Factor = 0.0
 
         # GLOBAL ARRAYS
@@ -581,7 +589,7 @@ class DiveState(object):
         time_at_altitude_before_dive = altitude_settings.Hours_at_Altitude_Before_Dive * 60.0
 
         if self.altitude_values.Diver_Acclimatized_at_Altitude:
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.settings_values.Units)
 
             for i in range(ARRAY_LENGTH):
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
@@ -592,7 +600,7 @@ class DiveState(object):
             if (altitude_settings.Starting_Acclimatized_Altitude >= altitude_settings.Altitude_of_Dive) or (altitude_settings.Starting_Acclimatized_Altitude < 0.0):
                 raise AltitudeException("ERROR! STARTING ACCLIMATIZED ALTITUDE MUST BE LESS THAN ALTITUDE OF DIVE AND GREATER THAN OR EQUAL TO ZERO")
 
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Starting_Acclimatized_Altitude, self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Starting_Acclimatized_Altitude, self.settings_values.Units)
 
             starting_ambient_pressure = self.Barometric_Pressure
 
@@ -600,7 +608,7 @@ class DiveState(object):
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
 
-            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.settings_values.Units)
             ending_ambient_pressure = self.Barometric_Pressure
             initial_inspired_n2_pressure = (starting_ambient_pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
             rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
@@ -1576,7 +1584,6 @@ class DiveState(object):
         Side Effects: Sets
         `self.Critical_Radius_He_Microns`
         `self.Critical_Radius_N2_Microns`,
-        `self.units_fsw`,
 
         or
 
@@ -1584,18 +1591,14 @@ class DiveState(object):
 
         Returns: None
         """
-        if self.settings_values.Units == UnitsSW.FSW:
-            self.units_fsw = True
-        else:
-            self.units_fsw = False
 
         if self.settings_values.Regeneration_Time_Constant <= 0:
             raise InputFileException("Regeneration_Time_Constant must be greater than 0")
 
-        if self.units_fsw and self.altitude_values.Altitude_of_Dive > 30000.0:
+        if self.settings_values.Units == UnitsSW.FSW and self.altitude_values.Altitude_of_Dive > 30000.0:
             raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
 
-        if (not self.units_fsw) and self.altitude_values.Altitude_of_Dive > 9144.0:
+        if self.settings_values.Units == UnitsSW.MSW and self.altitude_values.Altitude_of_Dive > 9144.0:
             raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
 
         self.Critical_Radius_N2_Microns = self.settings_values.Critical_Radius_N2_Microns
@@ -1617,7 +1620,6 @@ class DiveState(object):
 
         `self.Adjusted_Critical_Radius_He`,
         `self.Adjusted_Critical_Radius_N2`,
-        `self.Altitude_Dive_Algorithm_Off`,
         `self.Altitude_of_Dive`,
         `self.Amb_Pressure_Onset_of_Imperm`,
         `self.Barometric_Pressure`,
@@ -1625,7 +1627,6 @@ class DiveState(object):
         `self.Crit_Volume_Parameter_Lambda`,
         `self.Critical_Radius_He_Microns`,
         `self.Critical_Radius_N2_Microns`,
-        `self.Critical_Volume_Algorithm_Off`,
         `self.Gas_Tension_Onset_of_Imperm`,
         `self.Gradient_Onset_of_Imperm_Atm`,
         `self.Helium_Pressure`,
@@ -1675,7 +1676,7 @@ class DiveState(object):
         # fsw = feet of seawater, a unit of pressure
         # msw = meters of seawater, a unit of pressure
 
-        if self.units_fsw:
+        if self.settings_values.Units == UnitsSW.FSW:
             self.Units_Word1 = "fswg"
             self.Units_Word2 = "fsw/min"
             self.Units_Factor = 33.0
@@ -1704,22 +1705,8 @@ class DiveState(object):
             self.Initial_Critical_Radius_N2[i] = self.settings_values.Critical_Radius_N2_Microns * 1.0E-6
             self.Initial_Critical_Radius_He[i] = self.settings_values.Critical_Radius_He_Microns * 1.0E-6
 
-        if self.settings_values.Critical_Volume_Algorithm == True:
-            self.Critical_Volume_Algorithm_Off = False
-        elif self.settings_values.Critical_Volume_Algorithm == False:
-            self.Critical_Volume_Algorithm_Off = True
-        else:
-            raise ValueError("Bad Critical Volume Algorithm: Critical_Volume_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values.Critical_Volume_Algorithm)
-
-        if self.settings_values.Altitude_Dive_Algorithm == True:
-            self.Altitude_Dive_Algorithm_Off = False
-            if self.altitude_values.Ascent_to_Altitude_Hours <= 0 and self.altitude_values.Diver_Acclimatized_at_Altitude is False:
-                raise AltitudeException("If diver is not acclimatized, Ascent_to_Altitude_Time must be greater than 0")
-
-        elif self.settings_values.Altitude_Dive_Algorithm == False:
-            self.Altitude_Dive_Algorithm_Off = True
-        else:
-            raise ValueError("Bad Altitude Dive Algorithm: Altitude_Dive_Algorithm = %s, must be 'OFF or 'ON''" % self.settings_values.Altitude_Dive_Algorithm)
+        if self.settings_values.Altitude_Dive_Algorithm and self.altitude_values.Ascent_to_Altitude_Hours <= 0 and not self.altitude_values.Diver_Acclimatized_at_Altitude:
+            raise AltitudeException("If diver is not acclimatized, Ascent_to_Altitude_Time must be greater than 0")
 
         #     INITIALIZE VARIABLES FOR SEA LEVEL OR ALTITUDE DIVE
         #     See subroutines for explanation of altitude calculations.  Purposes are
@@ -1727,17 +1714,17 @@ class DiveState(object):
         #     radius variables and gas loadings, as applicable, based on altitude,
         #     ascent to altitude before the dive, and time at altitude before the dive
 
-        if self.Altitude_Dive_Algorithm_Off:
+        if self.settings_values.Altitude_Dive_Algorithm:
+            self.vpm_altitude_dive_algorithm(self.altitude_values)
+        else:
             self.Altitude_of_Dive = 0.0
-            self.Barometric_Pressure = calc_barometric_pressure(self.Altitude_of_Dive, self.units_fsw)
+            self.Barometric_Pressure = calc_barometric_pressure(self.Altitude_of_Dive, self.settings_values.Units)
 
             for i in range(ARRAY_LENGTH):
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
                 self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
-        else:
-            self.vpm_altitude_dive_algorithm(self.altitude_values)
 
     def set_gas_mixes(self, dive):
         """
@@ -1803,9 +1790,7 @@ class DiveState(object):
         Returns: None
         """
         for profile in dive.profile_codes:
-            profile_code = profile.profile_code
-
-            if profile_code == 1:
+            if profile.profile_code == ProfileCode.Descent:
                 self.Starting_Depth = profile.starting_depth
                 self.Ending_Depth = profile.ending_depth
                 self.Rate = profile.rate
@@ -1825,7 +1810,7 @@ class DiveState(object):
 
                 self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, self.Rate)
 
-            elif profile_code == 2:
+            elif profile.profile_code == ProfileCode.Constant:
                 self.Depth = profile.depth
                 self.Run_Time_End_of_Segment = profile.run_time_at_end_of_segment
                 self.Mix_Number = profile.gasmix
@@ -1833,10 +1818,8 @@ class DiveState(object):
                 self.gas_loadings_constant_depth(self.Depth, self.Run_Time_End_of_Segment)
 
                 self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Depth)
-            elif profile_code == 99:
-                break
             else:
-                raise InputFileException("Invalid profile code %d. Valid profile codes are 1 (descent), 2 (constant), and 99 (ascent)" % profile_code)
+                break
 
     def deco_stop_loop_block_within_critical_volume_loop(self):
         """
@@ -2110,7 +2093,7 @@ class DiveState(object):
             # converged, the program will re-assign variables to their values at the
             # start of the deco zone and process another trial decompression schedule.
 
-            if self.Schedule_Converged or self.Critical_Volume_Algorithm_Off:
+            if self.Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
                 self.critical_volume_decision_tree()
 
             else:
@@ -2194,9 +2177,7 @@ class DiveState(object):
         #     combination at any depth during the ascent.
 
         for profile in dive.profile_codes:
-            profile_code = profile.profile_code
-
-            if profile_code == 99:
+            if profile.profile_code == ProfileCode.Ascent:
                 self.Number_of_Changes = profile.number_of_ascent_parameter_changes
                 self.Depth_Change = [0.0] * self.Number_of_Changes
                 self.Mix_Change = [0.0] * self.Number_of_Changes
@@ -2230,7 +2211,7 @@ class DiveState(object):
 
         self.calc_start_of_deco_zone(self.Starting_Depth, self.Rate)
 
-        if self.units_fsw:
+        if self.settings_values.Units == UnitsSW.FSW:
             if self.Step_Size < 10.0:
                 rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
                 self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
@@ -2695,7 +2676,7 @@ def calc_barometric_pressure(altitude, units_fsw):
 
     gmr_factor = acceleration_of_gravity * molecular_weight_of_air / gas_constant_r
 
-    if units_fsw:
+    if units_fsw == UnitsSW.FSW:
         altitude_feet = altitude
         altitude_kilometers = altitude_feet / 3280.839895
         pressure_at_sea_level = pressure_at_sea_level_fsw
