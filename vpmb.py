@@ -35,6 +35,7 @@ import argparse
 
 
 ARRAY_LENGTH = 16
+COMPARTMENT_RANGE = range(ARRAY_LENGTH)
 
 
 class AltitudeException(Exception):
@@ -317,8 +318,6 @@ class DiveState(object):
 
         # init the instance variables
         # strings
-        # self.Word = ""
-        self.Units = ""
         self.Units_Word1 = ""
         self.Units_Word2 = ""
 
@@ -475,7 +474,7 @@ class DiveState(object):
         inspired_helium_pressure = 0.0
         inspired_nitrogen_pressure = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             temp_helium_pressure = self.Helium_Pressure[i]
             temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
@@ -503,7 +502,7 @@ class DiveState(object):
         Returns: None
         """
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             max_actual_gradient_pascals = (self.Max_Actual_Gradient[i] / self.Units_Factor) * self.ATM
 
             adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.Units_Factor) * self.ATM
@@ -556,7 +555,7 @@ class DiveState(object):
         # Note: negative supersaturation gradients are meaningless for this
         # application, so the values must be equal to or greater than zero.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.Constant_Pressure_Other_Gases) - (deco_stop_depth + self.Barometric_Pressure)
             if compartment_gradient <= 0.0:
                 compartment_gradient = 0.0
@@ -591,7 +590,7 @@ class DiveState(object):
         if self.altitude_values.Diver_Acclimatized_at_Altitude:
             self.Barometric_Pressure = calc_barometric_pressure(altitude_settings.Altitude_of_Dive, self.settings_values.Units)
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
                 self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
@@ -604,7 +603,7 @@ class DiveState(object):
 
             starting_ambient_pressure = self.Barometric_Pressure
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
 
@@ -614,7 +613,7 @@ class DiveState(object):
             rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
             nitrogen_rate = rate * self.fraction_inert_gas
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
                 self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
@@ -663,7 +662,7 @@ class DiveState(object):
 
             inspired_nitrogen_pressure = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
                 self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], time_at_altitude_before_dive)
@@ -697,7 +696,7 @@ class DiveState(object):
         helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
         nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             self.Initial_Helium_Pressure[i] = self.Helium_Pressure[i]
             self.Initial_Nitrogen_Pressure[i] = self.Nitrogen_Pressure[i]
 
@@ -788,7 +787,7 @@ class DiveState(object):
         # the inert gases helium and nitrogen.  These "other gases" are included in
         # the calculation of gas tensions and gradients.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.Constant_Pressure_Other_Gases
 
             starting_gradient = starting_ambient_pressure - starting_gas_tension
@@ -979,7 +978,7 @@ class DiveState(object):
 
         self.Ending_Ambient_Pressure = ambient_pressure
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             temp_helium_pressure = self.Helium_Pressure[i]
             temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
@@ -1006,7 +1005,7 @@ class DiveState(object):
         # First convert the maximum crushing pressure obtained for each compartment
         # to Pascals.  Next, compute the ending radius for helium and nitrogen
         # critical nuclei in each compartment.
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             crushing_pressure_pascals_he = (self.Max_Crushing_Pressure_He[i] / self.Units_Factor) * self.ATM
 
             crushing_pressure_pascals_n2 = (self.Max_Crushing_Pressure_N2[i] / self.Units_Factor) * self.ATM
@@ -1080,7 +1079,7 @@ class DiveState(object):
         # Gradients are saved in a global array for later use by both the Critical
         # Volume subroutine and the VPM Repetitive Algorithm subroutine.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
 
             initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
@@ -1136,7 +1135,7 @@ class DiveState(object):
         low_bound = 0.0
         high_bound = -1.0 * (starting_ambient_pressure / rate)
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             initial_helium_pressure = self.Helium_Pressure[i]
             initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
@@ -1219,7 +1218,7 @@ class DiveState(object):
         # compartment is empty of helium and nitrogen, then the weighted allowable
         # gradient formula cannot be used since it will result in division by zero.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
 
             if gas_loading > 0.0:
@@ -1278,7 +1277,7 @@ class DiveState(object):
         initial_helium_pressure = [0.0] * ARRAY_LENGTH
         initial_nitrogen_pressure = [0.0] * ARRAY_LENGTH
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             initial_helium_pressure[i] = self.Helium_Pressure[i]
             initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
 
@@ -1287,7 +1286,7 @@ class DiveState(object):
 
             segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 temp_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, self.Helium_Time_Constant[i], initial_helium_pressure[i])
 
                 temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
@@ -1302,7 +1301,7 @@ class DiveState(object):
                 allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - self.Constant_Pressure_Other_Gases
 
             end_sub = True
-            for j in range(ARRAY_LENGTH):
+            for j in COMPARTMENT_RANGE:
                 if temp_gas_loading[j] > allowable_gas_loading[j]:
                     new_ambient_pressure = ending_ambient_pressure + step_size
                     self.Deco_Stop_Depth = self.Deco_Stop_Depth + step_size
@@ -1358,7 +1357,7 @@ class DiveState(object):
         amb_press_first_stop_pascals = (ambient_pressure_first_stop / self.Units_Factor) * self.ATM
         amb_press_next_stop_pascals = (ambient_pressure_next_stop / self.Units_Factor) * self.ATM
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             # Helium Calculation
             self.Deco_Gradient_He[i] = self._calculate_deco_gradient(self.Allowable_Gradient_He[i], amb_press_first_stop_pascals, amb_press_next_stop_pascals)
 
@@ -1402,7 +1401,7 @@ class DiveState(object):
         # Check to make sure that program won't lock up if unable to decompress
         # to the next stop.  If so, write error message and terminate program.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             if(inspired_helium_pressure + inspired_nitrogen_pressure) > 0.0:
                 weighted_allowable_gradient = (self.Deco_Gradient_He[i] * inspired_helium_pressure + self.Deco_Gradient_N2[i] * inspired_nitrogen_pressure) / (inspired_helium_pressure + inspired_nitrogen_pressure)
 
@@ -1410,7 +1409,7 @@ class DiveState(object):
                     raise OffGassingException("ERROR! OFF-GASSING GRADIENT IS TOO SMALL TO DECOMPRESS AT THE %f STOP. Next stop: %f" % (deco_stop_depth, next_stop))
 
         while True:
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
 
                 initial_helium_pressure = self.Helium_Pressure[i]
                 initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
@@ -1457,7 +1456,7 @@ class DiveState(object):
 
         compartment_deco_ceiling = [0.0] * ARRAY_LENGTH
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
 
             if gas_loading > 0.0:
@@ -1513,7 +1512,7 @@ class DiveState(object):
 
         parameter_lambda_pascals = (self.Crit_Volume_Parameter_Lambda / 33.0) * self.ATM
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
 
             phase_volume_time = deco_phase_volume_time + self.Surface_Phase_Volume_Time[i]
 
@@ -1562,7 +1561,7 @@ class DiveState(object):
         """
 
         surface_inspired_n2_pressure = (self.Barometric_Pressure - self.Water_Vapor_Pressure) * self.fraction_inert_gas
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
 
                 self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
@@ -1693,7 +1692,7 @@ class DiveState(object):
         self.Run_Time = 0.0
         self.Segment_Number = 0
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             self.Helium_Time_Constant[i] = log(2.0) / self.Helium_Half_Time[i]
             self.Nitrogen_Time_Constant[i] = log(2.0) / self.Nitrogen_Half_Time[i]
             self.Max_Crushing_Pressure_He[i] = 0.0
@@ -1720,7 +1719,7 @@ class DiveState(object):
             self.Altitude_of_Dive = 0.0
             self.Barometric_Pressure = calc_barometric_pressure(self.Altitude_of_Dive, self.settings_values.Units)
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
                 self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
@@ -1746,7 +1745,9 @@ class DiveState(object):
         self.Fraction_Helium = [0.0] * num_gas_mixes
         self.Fraction_Nitrogen = [0.0] * num_gas_mixes
 
-        for i in range(num_gas_mixes):
+        gas_mix_range = range(num_gas_mixes)
+
+        for i in gas_mix_range:
             gasmix_summary = dive.gasmix_summary
             fraction_oxygen[i] = gasmix_summary[i].fraction_O2
             self.Fraction_Nitrogen[i] = gasmix_summary[i].fraction_N2
@@ -1756,7 +1757,7 @@ class DiveState(object):
             if sum_of_fractions != 1.0:
                 raise InputFileException("ERROR IN INPUT FILE (gas mixes don't add up to 1.0")
 
-        for i in range(num_gas_mixes):
+        for i in gas_mix_range:
             self.output_object.add_gasmix(fraction_oxygen[i], self.Fraction_Nitrogen[i], self.Fraction_Helium[i])
 
     def profile_code_loop(self, dive):
@@ -1888,7 +1889,7 @@ class DiveState(object):
 
         Returns: None
         """
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
             self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
@@ -2031,7 +2032,7 @@ class DiveState(object):
             #     Write ascent data to output file and exit the Critical Volume Loop.
 
             if self.Deco_Stop_Depth == 0.0:
-                for i in range(ARRAY_LENGTH):
+                for i in COMPARTMENT_RANGE:
                     self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
                     self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
@@ -2068,7 +2069,7 @@ class DiveState(object):
 
             self.calc_surface_phase_volume_time()
 
-            for i in range(ARRAY_LENGTH):
+            for i in COMPARTMENT_RANGE:
                 self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
                 self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
                 if self.Critical_Volume_Comparison <= 1.0:
@@ -2104,7 +2105,7 @@ class DiveState(object):
                 self.Mix_Number = self.Mix_Change[0]
                 self.Rate = self.Rate_Change[0]
                 self.Step_Size = self.Step_Size_Change[0]
-                for i in range(ARRAY_LENGTH):
+                for i in COMPARTMENT_RANGE:
                     self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
                     self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
                     self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
@@ -2164,7 +2165,7 @@ class DiveState(object):
         #     The VPM uses an iterative process to compute decompression schedules so
         #     there will be more than one pass through the decompression loop.
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             self.He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
             self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
 
@@ -2240,7 +2241,7 @@ class DiveState(object):
         self.Last_Run_Time = 0.0
         self.Schedule_Converged = False
 
-        for i in range(ARRAY_LENGTH):
+        for i in COMPARTMENT_RANGE:
             self.Last_Phase_Volume_Time[i] = 0.0
             self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
             self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
@@ -2295,7 +2296,7 @@ class DiveState(object):
                 self.gas_loadings_surface_interval(self.Surface_Interval_Time)
                 self.vpm_repetitive_algorithm(self.Surface_Interval_Time)
 
-                for i in range(ARRAY_LENGTH):
+                for i in COMPARTMENT_RANGE:
                     self.Max_Crushing_Pressure_He[i] = 0.0
                     self.Max_Crushing_Pressure_N2[i] = 0.0
                     self.Max_Actual_Gradient[i] = 0.0
@@ -2664,10 +2665,6 @@ def calc_barometric_pressure(altitude, units_fsw):
     gas_constant_r = 8.31432  # Joules/mol*deg Kelvin
     temp_at_sea_level = 288.15  # degrees Kelvin
 
-    pressure_at_sea_level_fsw = 33.0  # feet of seawater based on 101325 Pa at sea level (Standard Atmosphere)
-
-    pressure_at_sea_level_msw = 10.0  # meters of seawater based on 100000 Pa at sea level (European System)
-
     # Change in Temp deg Kelvin with
     # change in geopotential altitude,
     # valid for first layer of atmosphere
@@ -2677,13 +2674,11 @@ def calc_barometric_pressure(altitude, units_fsw):
     gmr_factor = acceleration_of_gravity * molecular_weight_of_air / gas_constant_r
 
     if units_fsw == UnitsSW.FSW:
-        altitude_feet = altitude
-        altitude_kilometers = altitude_feet / 3280.839895
-        pressure_at_sea_level = pressure_at_sea_level_fsw
+        altitude_kilometers = altitude / 3280.839895
+        pressure_at_sea_level = 33.0  # feet of seawater based on 101325 Pa at sea level (Standard Atmosphere)
     else:
-        altitude_meters = altitude
-        altitude_kilometers = altitude_meters / 1000.0
-        pressure_at_sea_level = pressure_at_sea_level_msw
+        altitude_kilometers = altitude / 1000.0
+        pressure_at_sea_level = 10.0  # meters of seawater based on 100000 Pa at sea level (European System)
 
     geopotential_altitude = (altitude_kilometers * radius_of_earth) / (altitude_kilometers + radius_of_earth)
     temp_at_geopotential_altitude = temp_at_sea_level + temp_gradient * geopotential_altitude
