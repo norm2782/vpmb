@@ -351,13 +351,9 @@ class DiveState(object):
 
         # init the instance variables
         # integers
-        # self.Number_of_Mixes = 0
         self.Number_of_Changes = 0
         self.Segment_Number_Start_of_Ascent = 0
         self.Repetitive_Dive_Flag = 0
-
-        # bools
-        self.Schedule_Converged = False
 
         # floats
         self.Ascent_Ceiling_Depth = 0.0
@@ -1925,24 +1921,18 @@ class DiveState(object):
 
         `self.Critical_Volume_Comparison`,
         `self.Deco_Phase_Volume_Time`,
-        `self.Deco_Phase_Volume_Time`,
         `self.Deco_Stop_Depth`,
         `self.Ending_Depth`,
         `self.First_Stop_Depth`,
         `self.Helium_Pressure`,
-        `self.Helium_Pressure`,
         `self.Last_Phase_Volume_Time`,
         `self.Mix_Number`,
         `self.Nitrogen_Pressure`
-        `self.Nitrogen_Pressure`,
         `self.Phase_Volume_Time`,
         `self.Rate`,
         `self.Run_Time`,
         `self.Run_Time`,
-        `self.Schedule_Converged`,
         `self.Segment_Number`,
-        `self.Starting_Depth`,
-        `self.Starting_Depth`,
         `self.Starting_Depth`,
         `self.Step_Size`,
 
@@ -1952,6 +1942,8 @@ class DiveState(object):
 
         Returns: None
         """
+        Schedule_Converged = False
+
         while True:
             # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
             # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
@@ -2027,7 +2019,7 @@ class DiveState(object):
                 self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
                 self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
                 if self.Critical_Volume_Comparison <= 1.0:
-                    self.Schedule_Converged = True
+                    Schedule_Converged = True
 
             # There are two options here.  If the Critical Volume Algorithm setting is
             # True and the schedule is converged, or the Critical Volume Algorithm
@@ -2048,7 +2040,7 @@ class DiveState(object):
             # converged, the program will re-assign variables to their values at the
             # start of the deco zone and process another trial decompression schedule.
 
-            if self.Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
+            if Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
                 self.critical_volume_decision_tree()
 
             else:
@@ -2093,7 +2085,6 @@ class DiveState(object):
         `self.Rate`,
         `self.Run_Time_Start_of_Ascent`,
         `self.Run_Time_Start_of_Deco_Zone`,
-        `self.Schedule_Converged`,
         `self.Segment_Number_Start_of_Ascent`,
         `self.Starting_Depth`,
         `self.Step_Size_Change`,
@@ -2193,7 +2184,6 @@ class DiveState(object):
         self.Run_Time_Start_of_Deco_Zone = self.Run_Time
         self.Deco_Phase_Volume_Time = 0.0
         self.Last_Run_Time = 0.0
-        self.Schedule_Converged = False
 
         for i in COMPARTMENT_RANGE:
             self.Last_Phase_Volume_Time[i] = 0.0
