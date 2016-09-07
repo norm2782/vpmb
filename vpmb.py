@@ -1327,60 +1327,6 @@ class DiveState(object):
 
         return deco_ceiling_depth
 
-    def critical_volume(self, deco_phase_volume_time):
-        """
-        Purpose: This subprogram applies the VPM Critical Volume Algorithm.  This
-        algorithm will compute "relaxed" gradients for helium and nitrogen based
-        on the setting of the Critical Volume Parameter Lambda.
-
-        Side Effects: Sets
-        `self.Allowable_Gradient_He`,
-        `self.Allowable_Gradient_N2`
-
-        Returns: None
-        """
-
-        # Note:  Since the Critical Volume Parameter Lambda was defined in units of
-        # fsw-min in the original papers by Yount and colleagues, the same
-        # convention is retained here.  Although Lambda is adjustable only in units
-        # of fsw-min in the program settings (range from 6500 to 8300 with default
-        # 7500), it will convert to the proper value in Pascals-min in this
-        # subroutine regardless of which diving pressure units are being used in
-        # the main program - feet of seawater (fsw) or meters of seawater (msw).
-        # The allowable gradient is computed using the quadratic formula (refer to
-        # separate write-up posted on the Deco List web site).
-
-        parameter_lambda_pascals = (self.settings_values.Crit_Volume_Parameter_Lambda / 33.0) * ATM
-
-        for i in COMPARTMENT_RANGE:
-
-            phase_volume_time = deco_phase_volume_time + self.Surface_Phase_Volume_Time[i]
-
-            # Helium Calculations
-            adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-            initial_allowable_grad_he_pa = (self.Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-            B = initial_allowable_grad_he_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
-
-            C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_he_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
-
-            new_allowable_grad_he_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
-
-            self.Allowable_Gradient_He[i] = (new_allowable_grad_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-
-            # Nitrogen Calculations
-            adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-            initial_allowable_grad_n2_pa = (self.Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-            B = initial_allowable_grad_n2_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
-
-            C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_n2_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
-
-            new_allowable_grad_n2_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
-
-            self.Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-
     def validate_data(self):
         """
         Purpose: Check the the data loaded from the input file is valid
@@ -2060,7 +2006,59 @@ class DiveState(object):
                 # END critical_volume_decision_tree
 
             else:
-                self.critical_volume(self.Deco_Phase_Volume_Time)
+                # START critical_volume()
+
+                # Purpose: This subprogram applies the VPM Critical Volume Algorithm.  This
+                # algorithm will compute "relaxed" gradients for helium and nitrogen based
+                # on the setting of the Critical Volume Parameter Lambda.
+
+                # Side Effects: Sets
+                # `self.Allowable_Gradient_He`,
+                # `self.Allowable_Gradient_N2`
+
+                # Note:  Since the Critical Volume Parameter Lambda was defined in units of
+                # fsw-min in the original papers by Yount and colleagues, the same
+                # convention is retained here.  Although Lambda is adjustable only in units
+                # of fsw-min in the program settings (range from 6500 to 8300 with default
+                # 7500), it will convert to the proper value in Pascals-min in this
+                # subroutine regardless of which diving pressure units are being used in
+                # the main program - feet of seawater (fsw) or meters of seawater (msw).
+                # The allowable gradient is computed using the quadratic formula (refer to
+                # separate write-up posted on the Deco List web site).
+
+                parameter_lambda_pascals = (self.settings_values.Crit_Volume_Parameter_Lambda / 33.0) * ATM
+
+                for i in COMPARTMENT_RANGE:
+
+                    phase_volume_time = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+
+                    # Helium Calculations
+                    adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                    initial_allowable_grad_he_pa = (self.Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                    B = initial_allowable_grad_he_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
+
+                    C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_he_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
+
+                    new_allowable_grad_he_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
+
+                    self.Allowable_Gradient_He[i] = (new_allowable_grad_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+
+                    # Nitrogen Calculations
+                    adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                    initial_allowable_grad_n2_pa = (self.Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                    B = initial_allowable_grad_n2_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
+
+                    C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_n2_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
+
+                    new_allowable_grad_n2_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
+
+                    self.Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+
+                # END critical_volume(self.Deco_Phase_Volume_Time)
+
                 self.Deco_Phase_Volume_Time = 0.0
                 self.Run_Time = self.Run_Time_Start_of_Deco_Zone
                 self.Starting_Depth = self.Depth_Start_of_Deco_Zone
