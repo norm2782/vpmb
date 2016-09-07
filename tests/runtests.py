@@ -3,6 +3,7 @@
 import unittest
 import vpmb
 import json
+import JSONReader
 
 def is_json_equal(json1, json2):
     """Checks the output json is equal (skips time and other unimportant things)"""
@@ -28,7 +29,7 @@ def load_and_check_file(input_file, expected_results):
     j = json.loads(f.read())
     f.close()
     
-    reader = vpmb.VPMBJSONReader()
+    reader = JSONReader.VPMBJSONReader()
     program_state = vpmb.DiveState()
     reader.load_external_data(program_state, json_input=j)
     program_state.main()
@@ -46,7 +47,7 @@ def load_and_return_program_state(input_file):
     j = json.loads(f.read())
     f.close()
     
-    reader = vpmb.VPMBJSONReader()
+    reader = JSONReader.VPMBJSONReader()
     program_state = vpmb.DiveState()
     reader.load_external_data(program_state, json_input=j)
     return program_state
@@ -113,7 +114,7 @@ class TestDiveResults(unittest.TestCase):
 
         program_state = vpmb.DiveState()
 
-        reader = vpmb.VPMBJSONReader()
+        reader = JSONReader.VPMBJSONReader()
         reader.load_external_data(program_state, input_file_name="test1/vpm_decompression_input.json")
 
         program_state.main()
@@ -152,7 +153,7 @@ class TestAltitudeConfigurations(unittest.TestCase):
 
 class TestGeneralExceptions(unittest.TestCase):
     def test_no_input_exception(self):
-        reader = vpmb.VPMBJSONReader()
+        reader = JSONReader.VPMBJSONReader()
         with self.assertRaises(ValueError):
             program_state = vpmb.DiveState()
             reader.load_external_data(program_state)
