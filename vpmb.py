@@ -1088,60 +1088,6 @@ class DiveState(object):
 
             self.Depth_Start_of_Deco_Zone = max(self.Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
 
-    def calc_ascent_ceiling(self):
-        """
-        Purpose: This subprogram calculates the ascent ceiling (the safe ascent
-        depth) in each compartment, based on the allowable gradients, and then
-        finds the deepest ascent ceiling across all compartments.
-
-        Side Effects: Sets
-        `self.Ascent_Ceiling_Depth`
-
-        Returns: None
-        """
-
-        compartment_ascent_ceiling = [0.0] * ARRAY_LENGTH
-
-        # Since there are two sets of allowable gradients being tracked, one for
-        # helium and one for nitrogen, a "weighted allowable gradient" must be
-        # computed each time based on the proportions of helium and nitrogen in
-        # each compartment.  This proportioning follows the methodology of
-        # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
-        # such as after extended periods of oxygen breathing, then the minimum value
-        # across both gases will be used.  It is important to note that if a
-        # compartment is empty of helium and nitrogen, then the weighted allowable
-        # gradient formula cannot be used since it will result in division by zero.
-
-        for i in COMPARTMENT_RANGE:
-            gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
-
-            if gas_loading > 0.0:
-                weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * self.Helium_Pressure[i] + self.Allowable_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
-                tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
-
-            else:
-                weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
-                tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
-
-            #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
-            #     the vacuum of outer space!
-            if tolerated_ambient_pressure < 0.0:
-                tolerated_ambient_pressure = 0.0
-
-            #     The Ascent Ceiling Depth is computed in a loop after all of the individual
-            #     compartment ascent ceilings have been calculated.  It is important that
-            #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
-            #     be extracted from the compartment values and not be compared against some
-            #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
-            #     compared against zero, this could cause a program lockup because sometimes
-            #     the Ascent Ceiling Depth needs to be negative (but not less than zero
-            #     absolute ambient pressure) in order to decompress to the last stop at zero
-            #     depth.
-
-            compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
-
-        self.Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
-
     def projected_ascent(self, starting_depth, rate, step_size):
         """
         Purpose: This subprogram performs a simulated ascent outside of the main
@@ -1435,41 +1381,6 @@ class DiveState(object):
 
             self.Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
 
-    def calc_surface_phase_volume_time(self):
-        """
-        Purpose: This subprogram computes the surface portion of the total phase
-        volume time.  This is the time factored out of the integration of
-        supersaturation gradient x time over the surface interval.  The VPM
-        considers the gradients that allow bubbles to form or to drive bubble
-        growth both in the water and on the surface after the dive.
-
-        This subroutine is a new development to the VPM algorithm in that it
-        computes the time course of supersaturation gradients on the surface
-        when both helium and nitrogen are present.  Refer to separate write-up
-        for a more detailed explanation of this algorithm.
-
-        Side Effects: Sets
-        `self.Surface_Phase_Volume_Time`
-
-        Returns: None
-        """
-
-        surface_inspired_n2_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-        for i in COMPARTMENT_RANGE:
-            if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
-
-                self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-
-            elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
-                decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
-
-                integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
-
-                self.Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-
-            else:
-                self.Surface_Phase_Volume_Time[i] = 0.0
-
     def validate_data(self):
         """
         Purpose: Check the the data loaded from the input file is valid
@@ -1665,292 +1576,6 @@ class DiveState(object):
             else:
                 break
 
-    def deco_stop_loop_block_within_critical_volume_loop(self):
-        """
-        Purpose:
-        DECO STOP LOOP BLOCK WITHIN CRITICAL VOLUME LOOP
-        This loop computes a decompression schedule to the surface during each
-        iteration of the critical volume loop.  No output is written from this
-        loop, rather it computes a schedule from which the in-water portion of the
-        total phase volume time (Deco_Phase_Volume_Time) can be extracted.  Also,
-        the gas loadings computed at the end of this loop are used in the subroutine
-        which computes the out-of-water portion of the total phase volume time
-        (Surface_Phase_Volume_Time) for that schedule.
-
-        Note that exit is made from the loop after last ascent is made to a deco
-        stop depth that is less than or equal to zero.  A final deco stop less
-        than zero can happen when the user makes an odd step size change during
-        ascent - such as specifying a 5 msw step size change at the 3 msw stop!
-
-        Side Effects: Sets
-        `self.Deco_Stop_Depth`,
-        `self.Last_Run_Time`
-        `self.Next_Stop`,
-        `self.Starting_Depth`,
-
-        Returns: None
-        """
-        while True:
-            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
-
-            if self.Deco_Stop_Depth <= 0.0:
-                break
-
-            if self.Number_of_Changes > 1:
-                for i in range(1, self.Number_of_Changes):
-                    if self.Depth_Change[i] >= self.Deco_Stop_Depth:
-                        self.Mix_Number = self.Mix_Change[i]
-                        self.Rate = self.Rate_Change[i]
-                        self.Step_Size = self.Step_Size_Change[i]
-
-            self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
-
-            self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
-
-            self.Starting_Depth = self.Deco_Stop_Depth
-            self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-            self.Deco_Stop_Depth = self.Next_Stop
-            self.Last_Run_Time = self.Run_Time
-
-    def critical_volume_decision_tree(self):
-        """Purpose:
-
-        Side Effects: Sets
-
-        `self.Deco_Stop_Depth`,
-        `self.Helium_Pressure`,
-        `self.Last_Run_Time`,
-        `self.Mix_Number`,
-        `self.Next_Stop`
-        `self.Nitrogen_Pressure`,
-        `self.Rate`,
-        `self.Run_Time`,
-        `self.Segment_Number`,
-        `self.Starting_Depth`,
-        `self.Step_Size`,
-        `self.Stop_Time`,
-
-        Returns: None
-        """
-        for i in COMPARTMENT_RANGE:
-            self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-            self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
-
-        self.Run_Time = self.Run_Time_Start_of_Ascent
-        self.Segment_Number = self.Segment_Number_Start_of_Ascent
-        self.Starting_Depth = self.Depth_Change[0]
-        self.Mix_Number = self.Mix_Change[0]
-        self.Rate = self.Rate_Change[0]
-        self.Step_Size = self.Step_Size_Change[0]
-        self.Deco_Stop_Depth = self.First_Stop_Depth
-        self.Last_Run_Time = 0.0
-
-        # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
-
-        while True:
-            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
-            # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
-            # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
-            # If there is a repetitive dive, this will be used later in the VPM
-            # Repetitive Algorithm to adjust the values for critical radii.
-            self.calc_max_actual_gradient(self.Deco_Stop_Depth)
-
-            self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
-            if self.Deco_Stop_Depth <= 0.0:
-                break
-
-            if self.Number_of_Changes > 1:
-                for i in range(1, self.Number_of_Changes):
-                    if self.Depth_Change[i] >= self.Deco_Stop_Depth:
-                        self.Mix_Number = self.Mix_Change[i]
-                        self.Rate = self.Rate_Change[i]
-                        self.Step_Size = self.Step_Size_Change[i]
-
-            self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
-            self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
-            # This next bit just rounds up the stop time at the first stop to be in
-            # whole increments of the minimum stop time (to make for a nice deco table).
-
-            if self.Last_Run_Time == 0.0:
-                self.Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
-            else:
-                self.Stop_Time = self.Run_Time - self.Last_Run_Time
-
-            # DURING FINAL DECOMPRESSION SCHEDULE, IF MINIMUM STOP TIME PARAMETER IS A
-            # WHOLE NUMBER (i.e. 1 minute) THEN WRITE DECO SCHEDULE USING INTEGER
-            # NUMBERS (looks nicer).  OTHERWISE, USE DECIMAL NUMBERS.
-            # Note: per the request of a noted exploration diver(!), program now allows
-            # a minimum stop time of less than one minute so that total ascent time can
-            # be minimized on very long dives.  In fact, with step size set at 1 fsw or
-            # 0.2 msw and minimum stop time set at 0.1 minute (6 seconds), a near
-            # continuous decompression schedule can be computed.
-
-            if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
-                self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(self.Stop_Time))
-            else:
-                self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
-
-            self.Starting_Depth = self.Deco_Stop_Depth
-            self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-            self.Deco_Stop_Depth = self.Next_Stop
-            self.Last_Run_Time = self.Run_Time
-
-    def critical_volume_loop(self):
-        """
-        Purpose:
-        If the Critical Volume
-        Algorithm is toggled False in the program settings, there will only be
-        one pass through this loop.  Otherwise, there will be two or more passes
-        through this loop until the deco schedule is "converged" - that is when a
-        comparison between the phase volume time of the present iteration and the
-        last iteration is less than or equal to one minute.  This implies that
-        the volume of released gas in the most recent iteration differs from the
-        "critical" volume limit by an acceptably small amount.  The critical
-        volume limit is set by the Critical Volume Parameter Lambda in the program
-        settings (default setting is 7500 fsw-min with adjustability range from
-        from 6500 to 8300 fsw-min according to Bruce Wienke).
-
-        Side Effects:
-
-        `self.Critical_Volume_Comparison`,
-        `self.Deco_Phase_Volume_Time`,
-        `self.Deco_Stop_Depth`,
-        `self.Ending_Depth`,
-        `self.First_Stop_Depth`,
-        `self.Helium_Pressure`,
-        `self.Last_Phase_Volume_Time`,
-        `self.Mix_Number`,
-        `self.Nitrogen_Pressure`
-        `self.Phase_Volume_Time`,
-        `self.Rate`,
-        `self.Run_Time`,
-        `self.Run_Time`,
-        `self.Segment_Number`,
-        `self.Starting_Depth`,
-        `self.Step_Size`,
-
-        or
-
-        Raises a DecompressionStepException
-
-        Returns: None
-        """
-        Schedule_Converged = False
-
-        while True:
-            # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
-            # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
-            # SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
-
-            self.calc_ascent_ceiling()
-            if self.Ascent_Ceiling_Depth <= 0.0:
-                self.Deco_Stop_Depth = 0.0
-            else:
-                rounding_operation2 = (self.Ascent_Ceiling_Depth / self.Step_Size) + 0.5
-                self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
-
-            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
-                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
-
-            # PERFORM A SEPARATE "PROJECTED ASCENT" OUTSIDE OF THE MAIN PROGRAM TO MAKE
-            # SURE THAT AN INCREASE IN GAS LOADINGS DURING ASCENT TO THE FIRST STOP WILL
-            # NOT CAUSE A VIOLATION OF THE DECO CEILING.  IF SO, ADJUST THE FIRST STOP
-            # DEEPER BASED ON STEP SIZE UNTIL A SAFE ASCENT CAN BE MADE.
-            # Note: this situation is a possibility when ascending from extremely deep
-            # dives or due to an unusual gas mix selection.
-            # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
-            # DECO ZONE.
-
-            self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
-
-            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
-                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
-
-            #     HANDLE THE SPECIAL CASE WHEN NO DECO STOPS ARE REQUIRED - ASCENT CAN BE
-            #     MADE DIRECTLY TO THE SURFACE
-            #     Write ascent data to output file and exit the Critical Volume Loop.
-
-            if self.Deco_Stop_Depth == 0.0:
-                for i in COMPARTMENT_RANGE:
-                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
-
-                self.Run_Time = self.Run_Time_Start_of_Ascent
-                self.Segment_Number = self.Segment_Number_Start_of_Ascent
-                self.Starting_Depth = self.Depth_Change[0]
-                self.Ending_Depth = 0.0
-                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
-
-                self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
-                break
-
-            # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
-            # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
-
-            self.Starting_Depth = self.Depth_Start_of_Deco_Zone
-            self.First_Stop_Depth = self.Deco_Stop_Depth
-            self.deco_stop_loop_block_within_critical_volume_loop()
-
-            # COMPUTE TOTAL PHASE VOLUME TIME AND MAKE CRITICAL VOLUME COMPARISON
-            # The deco phase volume time is computed from the run time.  The surface
-            # phase volume time is computed in a subroutine based on the surfacing gas
-            # loadings from previous deco loop block.  Next the total phase volume time
-            # (in-water + surface) for each compartment is compared against the previous
-            # total phase volume time.  The schedule is converged when the difference is
-            # less than or equal to 1 minute in any one of the ARRAY_LENGTH compartments.
-
-            # Note:  the "phase volume time" is somewhat of a mathematical concept.
-            # It is the time divided out of a total integration of supersaturation
-            # gradient x time (in-water and surface).  This integration is multiplied
-            # by the excess bubble number to represent the amount of free-gas released
-            # as a result of allowing a certain number of excess bubbles to form.
-            self.Deco_Phase_Volume_Time = self.Run_Time - self.Run_Time_Start_of_Deco_Zone
-
-            self.calc_surface_phase_volume_time()
-
-            for i in COMPARTMENT_RANGE:
-                self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
-                self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
-                if self.Critical_Volume_Comparison <= 1.0:
-                    Schedule_Converged = True
-
-            # There are two options here.  If the Critical Volume Algorithm setting is
-            # True and the schedule is converged, or the Critical Volume Algorithm
-            # setting was False in the first place, the program will re-assign variables
-            # to their values at the start of ascent (end of bottom time) and process
-            # a complete decompression schedule once again using all the same ascent
-            # parameters and first stop depth.  This decompression schedule will match
-            # the last iteration of the Critical Volume Loop and the program will write
-            # the final deco schedule to the output file.
-
-            # Note: if the Critical Volume Algorithm setting was False, the final deco
-            # schedule will be based on "Initial Allowable Supersaturation Gradients."
-            # If it was True, the final schedule will be based on "Adjusted Allowable
-            # Supersaturation Gradients" (gradients that are "relaxed" as a result of
-            # the Critical Volume Algorithm).
-
-            # If the Critical Volume Algorithm setting is True and the schedule is not
-            # converged, the program will re-assign variables to their values at the
-            # start of the deco zone and process another trial decompression schedule.
-
-            if Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
-                self.critical_volume_decision_tree()
-
-            else:
-                self.critical_volume(self.Deco_Phase_Volume_Time)
-                self.Deco_Phase_Volume_Time = 0.0
-                self.Run_Time = self.Run_Time_Start_of_Deco_Zone
-                self.Starting_Depth = self.Depth_Start_of_Deco_Zone
-                self.Mix_Number = self.Mix_Change[0]
-                self.Rate = self.Rate_Change[0]
-                self.Step_Size = self.Step_Size_Change[0]
-                for i in COMPARTMENT_RANGE:
-                    self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
-                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
-                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
-                continue
-            break
-
     def decompression_loop(self, dive):
         """
         Purpose:
@@ -2084,7 +1709,371 @@ class DiveState(object):
             self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
             self.Max_Actual_Gradient[i] = 0.0
 
-        self.critical_volume_loop()
+        # START critical_volume_loop
+        # Purpose:
+        # If the Critical Volume
+        # Algorithm is toggled False in the program settings, there will only be
+        # one pass through this loop.  Otherwise, there will be two or more passes
+        # through this loop until the deco schedule is "converged" - that is when a
+        # comparison between the phase volume time of the present iteration and the
+        # last iteration is less than or equal to one minute.  This implies that
+        # the volume of released gas in the most recent iteration differs from the
+        # "critical" volume limit by an acceptably small amount.  The critical
+        # volume limit is set by the Critical Volume Parameter Lambda in the program
+        # settings (default setting is 7500 fsw-min with adjustability range from
+        # from 6500 to 8300 fsw-min according to Bruce Wienke).
+
+        # Side Effects:
+
+        # `self.Critical_Volume_Comparison`,
+        # `self.Deco_Phase_Volume_Time`,
+        # `self.Deco_Stop_Depth`,
+        # `self.Ending_Depth`,
+        # `self.First_Stop_Depth`,
+        # `self.Helium_Pressure`,
+        # `self.Last_Phase_Volume_Time`,
+        # `self.Mix_Number`,
+        # `self.Nitrogen_Pressure`
+        # `self.Phase_Volume_Time`,
+        # `self.Rate`,
+        # `self.Run_Time`,
+        # `self.Run_Time`,
+        # `self.Segment_Number`,
+        # `self.Starting_Depth`,
+        # `self.Step_Size`,
+
+        # or
+
+        # Raises a DecompressionStepException
+
+        Schedule_Converged = False
+
+        while True:
+            # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
+            # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
+            # SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
+
+            # START CALC_ASCENT_CEILING
+
+            # Purpose: This subprogram calculates the ascent ceiling (the safe ascent
+            # depth) in each compartment, based on the allowable gradients, and then
+            # finds the deepest ascent ceiling across all compartments.
+
+            # Side Effects: Sets
+            # `self.Ascent_Ceiling_Depth`
+
+            compartment_ascent_ceiling = [0.0] * ARRAY_LENGTH
+
+            # Since there are two sets of allowable gradients being tracked, one for
+            # helium and one for nitrogen, a "weighted allowable gradient" must be
+            # computed each time based on the proportions of helium and nitrogen in
+            # each compartment.  This proportioning follows the methodology of
+            # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
+            # such as after extended periods of oxygen breathing, then the minimum value
+            # across both gases will be used.  It is important to note that if a
+            # compartment is empty of helium and nitrogen, then the weighted allowable
+            # gradient formula cannot be used since it will result in division by zero.
+
+            for i in COMPARTMENT_RANGE:
+                gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
+
+                if gas_loading > 0.0:
+                    weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * self.Helium_Pressure[i] + self.Allowable_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
+                    tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
+
+                else:
+                    weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
+                    tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
+
+                #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
+                #     the vacuum of outer space!
+                if tolerated_ambient_pressure < 0.0:
+                    tolerated_ambient_pressure = 0.0
+
+                #     The Ascent Ceiling Depth is computed in a loop after all of the individual
+                #     compartment ascent ceilings have been calculated.  It is important that
+                #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
+                #     be extracted from the compartment values and not be compared against some
+                #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
+                #     compared against zero, this could cause a program lockup because sometimes
+                #     the Ascent Ceiling Depth needs to be negative (but not less than zero
+                #     absolute ambient pressure) in order to decompress to the last stop at zero
+                #     depth.
+
+                compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
+
+            self.Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
+
+            # END CALC_ASCENT_CEILING
+
+            if self.Ascent_Ceiling_Depth <= 0.0:
+                self.Deco_Stop_Depth = 0.0
+            else:
+                rounding_operation2 = (self.Ascent_Ceiling_Depth / self.Step_Size) + 0.5
+                self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
+
+            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
+
+            # PERFORM A SEPARATE "PROJECTED ASCENT" OUTSIDE OF THE MAIN PROGRAM TO MAKE
+            # SURE THAT AN INCREASE IN GAS LOADINGS DURING ASCENT TO THE FIRST STOP WILL
+            # NOT CAUSE A VIOLATION OF THE DECO CEILING.  IF SO, ADJUST THE FIRST STOP
+            # DEEPER BASED ON STEP SIZE UNTIL A SAFE ASCENT CAN BE MADE.
+            # Note: this situation is a possibility when ascending from extremely deep
+            # dives or due to an unusual gas mix selection.
+            # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
+            # DECO ZONE.
+
+            self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
+
+            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
+
+            #     HANDLE THE SPECIAL CASE WHEN NO DECO STOPS ARE REQUIRED - ASCENT CAN BE
+            #     MADE DIRECTLY TO THE SURFACE
+            #     Write ascent data to output file and exit the Critical Volume Loop.
+
+            if self.Deco_Stop_Depth == 0.0:
+                for i in COMPARTMENT_RANGE:
+                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
+                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+
+                self.Run_Time = self.Run_Time_Start_of_Ascent
+                self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                self.Starting_Depth = self.Depth_Change[0]
+                self.Ending_Depth = 0.0
+                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
+
+                self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                break
+
+            # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
+            # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
+
+            self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+            self.First_Stop_Depth = self.Deco_Stop_Depth
+
+            # START deco_stop_loop_block_within_critical_volume_loop
+
+            # Purpose:
+            # DECO STOP LOOP BLOCK WITHIN CRITICAL VOLUME LOOP
+            # This loop computes a decompression schedule to the surface during each
+            # iteration of the critical volume loop.  No output is written from this
+            # loop, rather it computes a schedule from which the in-water portion of the
+            # total phase volume time (Deco_Phase_Volume_Time) can be extracted.  Also,
+            # the gas loadings computed at the end of this loop are used in the subroutine
+            # which computes the out-of-water portion of the total phase volume time
+            # (Surface_Phase_Volume_Time) for that schedule.
+
+            # Note that exit is made from the loop after last ascent is made to a deco
+            # stop depth that is less than or equal to zero.  A final deco stop less
+            # than zero can happen when the user makes an odd step size change during
+            # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
+
+            # Side Effects: Sets
+            # `self.Deco_Stop_Depth`,
+            # `self.Last_Run_Time`
+            # `self.Next_Stop`,
+            # `self.Starting_Depth`,
+
+            while True:
+                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+
+                if self.Deco_Stop_Depth <= 0.0:
+                    break
+
+                if self.Number_of_Changes > 1:
+                    for i in range(1, self.Number_of_Changes):
+                        if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                            self.Mix_Number = self.Mix_Change[i]
+                            self.Rate = self.Rate_Change[i]
+                            self.Step_Size = self.Step_Size_Change[i]
+
+                self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+
+                self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+
+                self.Starting_Depth = self.Deco_Stop_Depth
+                self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                self.Deco_Stop_Depth = self.Next_Stop
+                self.Last_Run_Time = self.Run_Time
+
+            # END deco_stop_loop_block_within_critical_volume_loop
+
+            # COMPUTE TOTAL PHASE VOLUME TIME AND MAKE CRITICAL VOLUME COMPARISON
+            # The deco phase volume time is computed from the run time.  The surface
+            # phase volume time is computed in a subroutine based on the surfacing gas
+            # loadings from previous deco loop block.  Next the total phase volume time
+            # (in-water + surface) for each compartment is compared against the previous
+            # total phase volume time.  The schedule is converged when the difference is
+            # less than or equal to 1 minute in any one of the ARRAY_LENGTH compartments.
+
+            # Note:  the "phase volume time" is somewhat of a mathematical concept.
+            # It is the time divided out of a total integration of supersaturation
+            # gradient x time (in-water and surface).  This integration is multiplied
+            # by the excess bubble number to represent the amount of free-gas released
+            # as a result of allowing a certain number of excess bubbles to form.
+            self.Deco_Phase_Volume_Time = self.Run_Time - self.Run_Time_Start_of_Deco_Zone
+
+            # START calc_surface_phase_volume_time
+
+            # Purpose: This subprogram computes the surface portion of the total phase
+            # volume time.  This is the time factored out of the integration of
+            # supersaturation gradient x time over the surface interval.  The VPM
+            # considers the gradients that allow bubbles to form or to drive bubble
+            # growth both in the water and on the surface after the dive.
+
+            # This subroutine is a new development to the VPM algorithm in that it
+            # computes the time course of supersaturation gradients on the surface
+            # when both helium and nitrogen are present.  Refer to separate write-up
+            # for a more detailed explanation of this algorithm.
+
+            # Side Effects: Sets
+            # `self.Surface_Phase_Volume_Time`
+
+            surface_inspired_n2_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+            for i in COMPARTMENT_RANGE:
+                if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
+
+                    self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+
+                elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
+                    decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
+
+                    integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
+
+                    self.Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+
+                else:
+                    self.Surface_Phase_Volume_Time[i] = 0.0
+
+
+            # END calc_surface_phase_volume_time
+
+            for i in COMPARTMENT_RANGE:
+                self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
+                if self.Critical_Volume_Comparison <= 1.0:
+                    Schedule_Converged = True
+
+            # There are two options here.  If the Critical Volume Algorithm setting is
+            # True and the schedule is converged, or the Critical Volume Algorithm
+            # setting was False in the first place, the program will re-assign variables
+            # to their values at the start of ascent (end of bottom time) and process
+            # a complete decompression schedule once again using all the same ascent
+            # parameters and first stop depth.  This decompression schedule will match
+            # the last iteration of the Critical Volume Loop and the program will write
+            # the final deco schedule to the output file.
+
+            # Note: if the Critical Volume Algorithm setting was False, the final deco
+            # schedule will be based on "Initial Allowable Supersaturation Gradients."
+            # If it was True, the final schedule will be based on "Adjusted Allowable
+            # Supersaturation Gradients" (gradients that are "relaxed" as a result of
+            # the Critical Volume Algorithm).
+
+            # If the Critical Volume Algorithm setting is True and the schedule is not
+            # converged, the program will re-assign variables to their values at the
+            # start of the deco zone and process another trial decompression schedule.
+
+            if Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
+                # START critical_volume_decision_tree
+
+                # """Purpose:
+                #
+                # Side Effects: Sets
+                #
+                # `self.Deco_Stop_Depth`,
+                # `self.Helium_Pressure`,
+                # `self.Last_Run_Time`,
+                # `self.Mix_Number`,
+                # `self.Next_Stop`
+                # `self.Nitrogen_Pressure`,
+                # `self.Rate`,
+                # `self.Run_Time`,
+                # `self.Segment_Number`,
+                # `self.Starting_Depth`,
+                # `self.Step_Size`,
+                # `self.Stop_Time`,
+                for i in COMPARTMENT_RANGE:
+                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
+                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+
+                self.Run_Time = self.Run_Time_Start_of_Ascent
+                self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                self.Starting_Depth = self.Depth_Change[0]
+                self.Mix_Number = self.Mix_Change[0]
+                self.Rate = self.Rate_Change[0]
+                self.Step_Size = self.Step_Size_Change[0]
+                self.Deco_Stop_Depth = self.First_Stop_Depth
+                self.Last_Run_Time = 0.0
+
+                # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
+
+                while True:
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+                    # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
+                    # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
+                    # If there is a repetitive dive, this will be used later in the VPM
+                    # Repetitive Algorithm to adjust the values for critical radii.
+                    self.calc_max_actual_gradient(self.Deco_Stop_Depth)
+
+                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                    if self.Deco_Stop_Depth <= 0.0:
+                        break
+
+                    if self.Number_of_Changes > 1:
+                        for i in range(1, self.Number_of_Changes):
+                            if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                                self.Mix_Number = self.Mix_Change[i]
+                                self.Rate = self.Rate_Change[i]
+                                self.Step_Size = self.Step_Size_Change[i]
+
+                    self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+                    self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+                    # This next bit just rounds up the stop time at the first stop to be in
+                    # whole increments of the minimum stop time (to make for a nice deco table).
+
+                    if self.Last_Run_Time == 0.0:
+                        self.Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
+                    else:
+                        self.Stop_Time = self.Run_Time - self.Last_Run_Time
+
+                    # DURING FINAL DECOMPRESSION SCHEDULE, IF MINIMUM STOP TIME PARAMETER IS A
+                    # WHOLE NUMBER (i.e. 1 minute) THEN WRITE DECO SCHEDULE USING INTEGER
+                    # NUMBERS (looks nicer).  OTHERWISE, USE DECIMAL NUMBERS.
+                    # Note: per the request of a noted exploration diver(!), program now allows
+                    # a minimum stop time of less than one minute so that total ascent time can
+                    # be minimized on very long dives.  In fact, with step size set at 1 fsw or
+                    # 0.2 msw and minimum stop time set at 0.1 minute (6 seconds), a near
+                    # continuous decompression schedule can be computed.
+
+                    if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
+                        self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(self.Stop_Time))
+                    else:
+                        self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
+
+                    self.Starting_Depth = self.Deco_Stop_Depth
+                    self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                    self.Deco_Stop_Depth = self.Next_Stop
+                    self.Last_Run_Time = self.Run_Time
+
+                # END critical_volume_decision_tree
+
+            else:
+                self.critical_volume(self.Deco_Phase_Volume_Time)
+                self.Deco_Phase_Volume_Time = 0.0
+                self.Run_Time = self.Run_Time_Start_of_Deco_Zone
+                self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+                self.Mix_Number = self.Mix_Change[0]
+                self.Rate = self.Rate_Change[0]
+                self.Step_Size = self.Step_Size_Change[0]
+                for i in COMPARTMENT_RANGE:
+                    self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
+                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
+                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
+                continue
+            break
+        # END critical_volume_loop
 
     def main(self):
         """
@@ -2140,16 +2129,6 @@ class DiveState(object):
 
                 self.Run_Time = 0.0
                 self.Segment_Number = 0
-
-                # may not be needed anymore
-                continue
-
-            # PROCESSING OF DIVE COMPLETE.  READ INPUT FILE TO DETERMINE IF THERE IS A
-            # REPETITIVE DIVE.  IF NONE, THEN EXIT REPETITIVE LOOP.
-            else:
-                continue
-
-        # pycallgraph.make_dot_graph('pycallgraph.png')
 
 # functions
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):
