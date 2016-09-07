@@ -135,10 +135,22 @@ class UnitsSW(Enum):
 
     @staticmethod
     def fromString(str):
-        if str == "fsw":
+        if str.lower() == "fsw":
             return UnitsSW.FSW
         else:
             return UnitsSW.MSW
+
+    def toWord1(self):
+        if self == UnitsSW.FSW:
+            return "fswg"
+        else:
+            return "mswg"
+
+    def toWord2(self):
+        if self == UnitsSW.FSW:
+            return "fsw/min"
+        else:
+            return "msw/min"
 
     def __str__(self):
         if self == UnitsSW.FSW:
@@ -317,10 +329,6 @@ class DiveState(object):
         """Set default values"""
 
         # init the instance variables
-        # strings
-        self.Units_Word1 = ""
-        self.Units_Word2 = ""
-
         # integers
         # self.Number_of_Mixes = 0
         self.Number_of_Changes = 0
@@ -1648,8 +1656,6 @@ class DiveState(object):
         `self.Surface_Tension_Gamma`,
         `self.Surface_Tension_Gamma`,
         `self.Units_Factor`,
-        `self.Units_Word1`,
-        `self.Units_Word2`,
         `self.Water_Vapor_Pressure`,
 
         or
@@ -1676,14 +1682,10 @@ class DiveState(object):
         # msw = meters of seawater, a unit of pressure
 
         if self.settings_values.Units == UnitsSW.FSW:
-            self.Units_Word1 = "fswg"
-            self.Units_Word2 = "fsw/min"
             self.Units_Factor = 33.0
             self.Water_Vapor_Pressure = 1.607  # based on respiratory quotient of 0.8 (Schreiner value)
 
         else:
-            self.Units_Word1 = "mswg"
-            self.Units_Word2 = "msw/min"
             self.Units_Factor = 10.1325
             self.Water_Vapor_Pressure = 0.493     # based on respiratory quotient of 0.8 (Schreiner value)
 
@@ -2436,7 +2438,7 @@ class HtmlOutput(object):
         <th>Rate +Dn/-Up (%s)</th>
         <th>Constant Depth (%s)</th>
         </tr>
-        """ % (self.state_object.Units_Word1, self.state_object.Units_Word1, self.state_object.Units_Word2, self.state_object.Units_Word1)
+        """ % (self.state_object.Units.toWord1(), self.state_object.Units.toWord1(), self.state_object.Units.toWord2(), self.state_object.Units.toWord1())
 
         for d in dive.dive_profile:
             return_string += "<tr>"
@@ -2453,10 +2455,10 @@ class HtmlOutput(object):
 
         return_string += "DECOMPRESSION PROFILE"
         return_string += "<br/>"
-        return_string += "Leading compartment enters the decompression zone at, %.1f %s" % (self.state_object.Depth_Start_of_Deco_Zone, self.state_object.Units_Word1)
+        return_string += "Leading compartment enters the decompression zone at, %.1f %s" % (self.state_object.Depth_Start_of_Deco_Zone, self.state_object.Units.toWord1())
         return_string += "<br/>"
 
-        return_string += "Deepest possible decompression stop is %.1f %s" % (self.state_object.Deepest_Possible_Stop_Depth, self.state_object.Units_Word1)
+        return_string += "Deepest possible decompression stop is %.1f %s" % (self.state_object.Deepest_Possible_Stop_Depth, self.state_object.Units.toWord1())
         return_string += "<br/>"
         return_string += "</p>"
 
@@ -2472,7 +2474,7 @@ class HtmlOutput(object):
         <th>Stop Time (min)</th>
         <th>Run Time(min)</th>
         </tr>
-        """ % (self.state_object.Units_Word1, self.state_object.Units_Word2, self.state_object.Units_Word1)
+        """ % (self.state_object.Units.toWord1(), self.state_object.Units.toWord2(), self.state_object.Units.toWord1())
 
         for d in dive.decompression_profile:
             return_string += "<tr>"
