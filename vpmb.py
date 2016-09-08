@@ -241,16 +241,7 @@ class DiveState(object):
     def __init__(self):
         """Set default values"""
 
-        # floats
-        self.Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
-        self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
-
         # Global Arrays
-        self.He_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
-        self.N2_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
-        self.He_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
-        self.N2_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
-
         self.Allowable_Gradient_He = [0.0] * ARRAY_LENGTH
         self.Allowable_Gradient_N2 = [0.0] * ARRAY_LENGTH
 
@@ -727,11 +718,20 @@ class DiveState(object):
         Phase_Volume_Time = [0.0] * ARRAY_LENGTH
         Last_Phase_Volume_Time = [0.0] * ARRAY_LENGTH
 
+        Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
+        Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
+
         Adjusted_Crushing_Pressure_He = [0.0] * ARRAY_LENGTH
         Adjusted_Crushing_Pressure_N2 = [0.0] * ARRAY_LENGTH
 
         Initial_Allowable_Gradient_N2 = [0.0] * ARRAY_LENGTH
         Initial_Allowable_Gradient_He = [0.0] * ARRAY_LENGTH
+
+        He_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
+        N2_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
+        He_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
+        N2_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
+
 
         for dive in self.input_values:
             self.output_object.new_dive(dive.desc)
@@ -1075,9 +1075,9 @@ class DiveState(object):
                 # back to its original initial radius over a period of time.  This
                 # phenomenon is probabilistic in nature and depends on absolute temperature.
                 # It is independent of crushing pressure.
-                self.Regenerated_Radius_He[i] = Adjusted_Critical_Radius_He[i] + (ending_radius_he - Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+                Regenerated_Radius_He[i] = Adjusted_Critical_Radius_He[i] + (ending_radius_he - Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
 
-                self.Regenerated_Radius_N2[i] = Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+                Regenerated_Radius_N2[i] = Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
 
                 # In order to preserve reference back to the initial critical radii after
                 # regeneration, an "adjusted crushing pressure" for the nuclei in each
@@ -1089,9 +1089,9 @@ class DiveState(object):
                 # of the original crushing pressure, is then applied in the VPM Critical
                 # Volume Algorithm and the VPM Repetitive Algorithm.
 
-                crush_pressure_adjust_ratio_he = (ending_radius_he * (Adjusted_Critical_Radius_He[i] - self.Regenerated_Radius_He[i])) / (self.Regenerated_Radius_He[i] * (Adjusted_Critical_Radius_He[i] - ending_radius_he))
+                crush_pressure_adjust_ratio_he = (ending_radius_he * (Adjusted_Critical_Radius_He[i] - Regenerated_Radius_He[i])) / (Regenerated_Radius_He[i] * (Adjusted_Critical_Radius_He[i] - ending_radius_he))
 
-                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (Adjusted_Critical_Radius_N2[i] - self.Regenerated_Radius_N2[i])) / (self.Regenerated_Radius_N2[i] * (Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
+                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (Adjusted_Critical_Radius_N2[i] - Regenerated_Radius_N2[i])) / (Regenerated_Radius_N2[i] * (Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
 
                 adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
                 adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
@@ -1132,9 +1132,9 @@ class DiveState(object):
             # Volume subroutine and the VPM Repetitive Algorithm subroutine.
 
             for i in COMPARTMENT_RANGE:
-                initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
+                initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
 
-                initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
+                initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
 
                 Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * self.settings_values.Units.toUnitsFactor()
                 Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * self.settings_values.Units.toUnitsFactor()
@@ -1151,8 +1151,8 @@ class DiveState(object):
             #     there will be more than one pass through the decompression loop.
 
             for i in COMPARTMENT_RANGE:
-                self.He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
-                self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
+                He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
+                N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
 
             Run_Time_Start_of_Ascent = self.Run_Time
             Segment_Number_Start_of_Ascent = self.Segment_Number
@@ -1326,8 +1326,8 @@ class DiveState(object):
 
             for i in COMPARTMENT_RANGE:
                 Last_Phase_Volume_Time[i] = 0.0
-                self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
-                self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
+                He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
+                N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
                 Max_Actual_Gradient[i] = 0.0
 
             # START critical_volume_loop
@@ -1487,8 +1487,8 @@ class DiveState(object):
 
                 if Deco_Stop_Depth == 0.0:
                     for i in COMPARTMENT_RANGE:
-                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+                        self.Helium_Pressure[i] = He_Pressure_Start_of_Ascent[i]
+                        self.Nitrogen_Pressure[i] = N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = Segment_Number_Start_of_Ascent
@@ -1622,8 +1622,8 @@ class DiveState(object):
                     # START critical_volume_decision_tree
 
                     for i in COMPARTMENT_RANGE:
-                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+                        self.Helium_Pressure[i] = He_Pressure_Start_of_Ascent[i]
+                        self.Nitrogen_Pressure[i] = N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = Segment_Number_Start_of_Ascent
@@ -1783,8 +1783,8 @@ class DiveState(object):
                     Step_Size = Step_Size_Change[0]
                     for i in COMPARTMENT_RANGE:
                         Last_Phase_Volume_Time[i] = Phase_Volume_Time[i]
-                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
-                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
+                        self.Helium_Pressure[i] = He_Pressure_Start_of_Deco_Zone[i]
+                        self.Nitrogen_Pressure[i] = N2_Pressure_Start_of_Deco_Zone[i]
                     continue
                 break
             # END critical_volume_loop
