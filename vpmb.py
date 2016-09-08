@@ -249,13 +249,7 @@ class DiveState(object):
         # floats
         self.Deco_Stop_Depth = 0.0
         self.Step_Size = 0.0
-        self.Last_Run_Time = 0.0
-        self.Stop_Time = 0.0
         self.Depth_Start_of_Deco_Zone = 0.0
-        self.First_Stop_Depth = 0.0
-        self.Run_Time_Start_of_Deco_Zone = 0.0
-        self.Run_Time_Start_of_Ascent = 0.0
-        self.Deco_Phase_Volume_Time = 0.0
         self.Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
         self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
 
@@ -893,6 +887,7 @@ class DiveState(object):
         # This is the largest loop in the main program and operates between Lines
         # 30 and 330.  If there is one or more repetitive dives, the program will
         # return to this point to process each repetitive dive.
+        # TODO keep these vars here?
         rate = 0.0
         starting_depth = 0.0
         ending_depth = 0.0
@@ -1292,7 +1287,7 @@ class DiveState(object):
                 self.He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
                 self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
 
-            self.Run_Time_Start_of_Ascent = self.Run_Time
+            Run_Time_Start_of_Ascent = self.Run_Time
             self.Segment_Number_Start_of_Ascent = self.Segment_Number
 
             #     INPUT PARAMETERS TO BE USED FOR STAGED DECOMPRESSION AND SAVE IN ARRAYS.
@@ -1362,9 +1357,9 @@ class DiveState(object):
             #     decompression zone).
 
             self.gas_loadings_ascent_descent(starting_depth, self.Depth_Start_of_Deco_Zone, rate)
-            self.Run_Time_Start_of_Deco_Zone = self.Run_Time
-            self.Deco_Phase_Volume_Time = 0.0
-            self.Last_Run_Time = 0.0
+            Run_Time_Start_of_Deco_Zone = self.Run_Time
+            Deco_Phase_Volume_Time = 0.0
+            Last_Run_Time = 0.0
 
             for i in COMPARTMENT_RANGE:
                 self.Last_Phase_Volume_Time[i] = 0.0
@@ -1532,7 +1527,7 @@ class DiveState(object):
                         self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
-                    self.Run_Time = self.Run_Time_Start_of_Ascent
+                    self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
                     starting_depth = self.Depth_Change[0]
                     ending_depth = 0.0
@@ -1545,7 +1540,7 @@ class DiveState(object):
                 # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
 
                 starting_depth = self.Depth_Start_of_Deco_Zone
-                self.First_Stop_Depth = self.Deco_Stop_Depth
+                First_Stop_Depth = self.Deco_Stop_Depth
 
                 # START deco_stop_loop_block_within_critical_volume_loop
 
@@ -1577,14 +1572,14 @@ class DiveState(object):
                                 rate = rate_Change[i]
                                 self.Step_Size = self.Step_Size_Change[i]
 
-                    self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+                    self.boyles_law_compensation(First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
 
                     self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
 
                     starting_depth = self.Deco_Stop_Depth
                     Next_Stop = self.Deco_Stop_Depth - self.Step_Size
                     self.Deco_Stop_Depth = Next_Stop
-                    self.Last_Run_Time = self.Run_Time
+                    Last_Run_Time = self.Run_Time
 
                 # END deco_stop_loop_block_within_critical_volume_loop
 
@@ -1601,7 +1596,7 @@ class DiveState(object):
                 # gradient x time (in-water and surface).  This integration is multiplied
                 # by the excess bubble number to represent the amount of free-gas released
                 # as a result of allowing a certain number of excess bubbles to form.
-                self.Deco_Phase_Volume_Time = self.Run_Time - self.Run_Time_Start_of_Deco_Zone
+                Deco_Phase_Volume_Time = self.Run_Time - Run_Time_Start_of_Deco_Zone
 
                 # START calc_surface_phase_volume_time
 
@@ -1636,7 +1631,7 @@ class DiveState(object):
                 # END calc_surface_phase_volume_time
 
                 for i in COMPARTMENT_RANGE:
-                    self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                    self.Phase_Volume_Time[i] = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
                     Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
                     if Critical_Volume_Comparison <= 1.0:
                         Schedule_Converged = True
@@ -1667,14 +1662,14 @@ class DiveState(object):
                         self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
-                    self.Run_Time = self.Run_Time_Start_of_Ascent
+                    self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
                     starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
-                    self.Deco_Stop_Depth = self.First_Stop_Depth
-                    self.Last_Run_Time = 0.0
+                    self.Deco_Stop_Depth = First_Stop_Depth
+                    Last_Run_Time = 0.0
 
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
@@ -1736,15 +1731,15 @@ class DiveState(object):
                                     rate = rate_Change[i]
                                     self.Step_Size = self.Step_Size_Change[i]
 
-                        self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+                        self.boyles_law_compensation(First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
                         self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
                         # This next bit just rounds up the stop time at the first stop to be in
                         # whole increments of the minimum stop time (to make for a nice deco table).
 
-                        if self.Last_Run_Time == 0.0:
-                            self.Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
+                        if Last_Run_Time == 0.0:
+                            Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
                         else:
-                            self.Stop_Time = self.Run_Time - self.Last_Run_Time
+                            Stop_Time = self.Run_Time - Last_Run_Time
 
                         # DURING FINAL DECOMPRESSION SCHEDULE, IF MINIMUM STOP TIME PARAMETER IS A
                         # WHOLE NUMBER (i.e. 1 minute) THEN WRITE DECO SCHEDULE USING INTEGER
@@ -1756,14 +1751,14 @@ class DiveState(object):
                         # continuous decompression schedule can be computed.
 
                         if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(self.Stop_Time))
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(Stop_Time))
                         else:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, Stop_Time)
 
                         starting_depth = self.Deco_Stop_Depth
                         Next_Stop = self.Deco_Stop_Depth - self.Step_Size
                         self.Deco_Stop_Depth = Next_Stop
-                        self.Last_Run_Time = self.Run_Time
+                        Last_Run_Time = self.Run_Time
 
                     # END critical_volume_decision_tree
 
@@ -1788,7 +1783,7 @@ class DiveState(object):
 
                     for i in COMPARTMENT_RANGE:
 
-                        phase_volume_time = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                        phase_volume_time = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
 
                         # Helium Calculations
                         adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
@@ -1817,8 +1812,8 @@ class DiveState(object):
 
                     # END critical_volume
 
-                    self.Deco_Phase_Volume_Time = 0.0
-                    self.Run_Time = self.Run_Time_Start_of_Deco_Zone
+                    Deco_Phase_Volume_Time = 0.0
+                    self.Run_Time = Run_Time_Start_of_Deco_Zone
                     starting_depth = self.Depth_Start_of_Deco_Zone
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
