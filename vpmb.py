@@ -282,21 +282,6 @@ class DiveState(object):
         self.Fraction_Helium = []
         self.Fraction_Nitrogen = []
 
-        self.Initial_Critical_Radius_He = [0.0] * ARRAY_LENGTH
-        self.Initial_Critical_Radius_N2 = [0.0] * ARRAY_LENGTH
-        self.Adjusted_Critical_Radius_He = [0.0] * ARRAY_LENGTH
-        self.Adjusted_Critical_Radius_N2 = [0.0] * ARRAY_LENGTH
-
-        self.Max_Crushing_Pressure_He = [0.0] * ARRAY_LENGTH
-        self.Max_Crushing_Pressure_N2 = [0.0] * ARRAY_LENGTH
-
-        self.Surface_Phase_Volume_Time = [0.0] * ARRAY_LENGTH
-
-        self.Max_Actual_Gradient = [0.0] * ARRAY_LENGTH
-
-        self.Amb_Pressure_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
-        self.Gas_Tension_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
-
 
     def set_input_values(self, inputs):
         self.input_values = inputs
@@ -553,20 +538,6 @@ class DiveState(object):
         Purpose:
         Main decompression loop. Checks that validates the input file, initializes the data
         and loops over the dives.
-
-        Side Effects: Sets
-
-        `self.Max_Actual_Gradient`,
-        `self.Max_Crushing_Pressure_He`,
-        `self.Max_Crushing_Pressure_N2`,
-        `self.Run_Time`,
-        `self.Segment_Number`
-
-        or
-
-        Raises an InputFileException
-
-        Returns: None
         """
 
         # Purpose: Check the the data loaded from the input file is valid
@@ -599,17 +570,31 @@ class DiveState(object):
         self.Run_Time = 0.0
         self.Segment_Number = 0
 
+        Initial_Critical_Radius_He = [0.0] * ARRAY_LENGTH
+        Initial_Critical_Radius_N2 = [0.0] * ARRAY_LENGTH
+
+        Max_Crushing_Pressure_He = [0.0] * ARRAY_LENGTH
+        Max_Crushing_Pressure_N2 = [0.0] * ARRAY_LENGTH
+
+        Surface_Phase_Volume_Time = [0.0] * ARRAY_LENGTH
+
+        Max_Actual_Gradient = [0.0] * ARRAY_LENGTH
+
+        Amb_Pressure_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
+        Gas_Tension_Onset_of_Imperm = [0.0] * ARRAY_LENGTH
+
+
         for i in COMPARTMENT_RANGE:
             self.Helium_Time_Constant[i] = log(2.0) / HELIUM_HALF_TIMES[i]
             self.Nitrogen_Time_Constant[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
-            self.Max_Crushing_Pressure_He[i] = 0.0
-            self.Max_Crushing_Pressure_N2[i] = 0.0
-            self.Max_Actual_Gradient[i] = 0.0
-            self.Surface_Phase_Volume_Time[i] = 0.0
-            self.Amb_Pressure_Onset_of_Imperm[i] = 0.0
-            self.Gas_Tension_Onset_of_Imperm[i] = 0.0
-            self.Initial_Critical_Radius_N2[i] = self.settings_values.Critical_Radius_N2_Microns * 1.0E-6
-            self.Initial_Critical_Radius_He[i] = self.settings_values.Critical_Radius_He_Microns * 1.0E-6
+            Max_Crushing_Pressure_He[i] = 0.0
+            Max_Crushing_Pressure_N2[i] = 0.0
+            Max_Actual_Gradient[i] = 0.0
+            Surface_Phase_Volume_Time[i] = 0.0
+            Amb_Pressure_Onset_of_Imperm[i] = 0.0
+            Gas_Tension_Onset_of_Imperm[i] = 0.0
+            Initial_Critical_Radius_N2[i] = self.settings_values.Critical_Radius_N2_Microns * 1.0E-6
+            Initial_Critical_Radius_He[i] = self.settings_values.Critical_Radius_He_Microns * 1.0E-6
 
         if self.settings_values.Altitude_Dive_Algorithm and self.altitude_values.Ascent_to_Altitude_Hours <= 0 and not self.altitude_values.Diver_Acclimatized_at_Altitude:
             raise AltitudeException("If diver is not acclimatized, Ascent_to_Altitude_Time must be greater than 0")
@@ -619,6 +604,10 @@ class DiveState(object):
         #     1) to determine barometric pressure and 2) set or adjust the VPM critical
         #     radius variables and gas loadings, as applicable, based on altitude,
         #     ascent to altitude before the dive, and time at altitude before the dive
+
+        Adjusted_Critical_Radius_He = [0.0] * ARRAY_LENGTH
+        Adjusted_Critical_Radius_N2 = [0.0] * ARRAY_LENGTH
+
 
         if self.settings_values.Altitude_Dive_Algorithm:
             # START vpm_altitude_dive_algorithm
@@ -634,8 +623,8 @@ class DiveState(object):
                 self.Barometric_Pressure = calc_barometric_pressure(self.altitude_values.Altitude_of_Dive, self.settings_values.Units)
 
                 for i in COMPARTMENT_RANGE:
-                    self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
-                    self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
+                    Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
+                    Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
                     self.Helium_Pressure[i] = 0.0
                     self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
             else:
@@ -665,43 +654,43 @@ class DiveState(object):
 
                     compartment_gradient_pascals = (compartment_gradient / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                    gradient_he_bubble_formation = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Initial_Critical_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
+                    gradient_he_bubble_formation = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (Initial_Critical_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
 
                     if compartment_gradient_pascals > gradient_he_bubble_formation:
 
                         new_critical_radius_he = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma))) / (compartment_gradient_pascals * self.settings_values.Skin_Compression_GammaC)
 
-                        self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i] + (self.Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
+                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
 
-                        self.Initial_Critical_Radius_He[i] = self.Adjusted_Critical_Radius_He[i]
+                        Initial_Critical_Radius_He[i] = Adjusted_Critical_Radius_He[i]
 
                     else:
-                        ending_radius_he = 1.0 / (compartment_gradient_pascals / (2.0 * (self.settings_values.Surface_Tension_Gamma - self.settings_values.Skin_Compression_GammaC)) + 1.0 / self.Initial_Critical_Radius_He[i])
+                        ending_radius_he = 1.0 / (compartment_gradient_pascals / (2.0 * (self.settings_values.Surface_Tension_Gamma - self.settings_values.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_He[i])
 
-                        regenerated_radius_he = self.Initial_Critical_Radius_He[i] + (ending_radius_he - self.Initial_Critical_Radius_He[i]) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
+                        regenerated_radius_he = Initial_Critical_Radius_He[i] + (ending_radius_he - Initial_Critical_Radius_He[i]) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
 
-                        self.Initial_Critical_Radius_He[i] = regenerated_radius_he
+                        Initial_Critical_Radius_He[i] = regenerated_radius_he
 
-                        self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
+                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
 
-                    gradient_n2_bubble_formation = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Initial_Critical_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
+                    gradient_n2_bubble_formation = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (Initial_Critical_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
 
                     if compartment_gradient_pascals > gradient_n2_bubble_formation:
 
                         new_critical_radius_n2 = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma))) / (compartment_gradient_pascals * self.settings_values.Skin_Compression_GammaC)
 
-                        self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i] + (self.Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
+                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
 
-                        self.Initial_Critical_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i]
+                        Initial_Critical_Radius_N2[i] = Adjusted_Critical_Radius_N2[i]
 
                     else:
-                        ending_radius_n2 = 1.0 / (compartment_gradient_pascals / (2.0 * (self.settings_values.Surface_Tension_Gamma - self.settings_values.Skin_Compression_GammaC)) + 1.0 / self.Initial_Critical_Radius_N2[i])
+                        ending_radius_n2 = 1.0 / (compartment_gradient_pascals / (2.0 * (self.settings_values.Surface_Tension_Gamma - self.settings_values.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_N2[i])
 
-                        regenerated_radius_n2 = self.Initial_Critical_Radius_N2[i] + (ending_radius_n2 - self.Initial_Critical_Radius_N2[i]) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
+                        regenerated_radius_n2 = Initial_Critical_Radius_N2[i] + (ending_radius_n2 - Initial_Critical_Radius_N2[i]) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
 
-                        self.Initial_Critical_Radius_N2[i] = regenerated_radius_n2
+                        Initial_Critical_Radius_N2[i] = regenerated_radius_n2
 
-                        self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
+                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
 
                 inspired_nitrogen_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
 
@@ -714,8 +703,8 @@ class DiveState(object):
             self.Barometric_Pressure = calc_barometric_pressure(0.0, self.settings_values.Units)
 
             for i in COMPARTMENT_RANGE:
-                self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
-                self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
+                Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
+                Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
         # END initialize_data
@@ -866,9 +855,9 @@ class DiveState(object):
                             # Compute radius at onset of impermeability for helium and nitrogen
                             # critical radii
 
-                            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+                            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
 
-                            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+                            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
 
                             # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
                             # Crushing pressures will be the same for helium and nitrogen
@@ -887,8 +876,8 @@ class DiveState(object):
                             else:
 
                                 if starting_gradient == gradient_onset_of_imperm:
-                                    self.Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
-                                    self.Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
+                                    Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
+                                    Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
                                 # In most cases, a subroutine will be called to find these values using a
                                 # numerical method.
                                 if starting_gradient < gradient_onset_of_imperm:
@@ -975,8 +964,8 @@ class DiveState(object):
                                         if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
                                             break
 
-                                    self.Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
-                                    self.Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
+                                    Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
+                                    Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
                                     # END onset_of_impermeability
 
                                 # Next, using the values for ambient pressure and gas tension at the onset
@@ -994,17 +983,17 @@ class DiveState(object):
                                 # pressures for helium and nitrogen can be calculated.
                                 ending_ambient_pressure_pa = (ending_ambient_pressure / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                                amb_press_onset_of_imperm_pa = (self.Amb_Pressure_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                                amb_press_onset_of_imperm_pa = (Amb_Pressure_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                                gas_tension_onset_of_imperm_pa = (self.Gas_Tension_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                                gas_tension_onset_of_imperm_pa = (Gas_Tension_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
                                 crushing_pressure_he = self._crushing_pressure_helper(radius_onset_of_imperm_he, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
 
                                 crushing_pressure_n2 = self._crushing_pressure_helper(radius_onset_of_imperm_n2, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
 
                             # UPDATE VALUES OF MAX CRUSHING PRESSURE IN Object ARRAYS
-                            self.Max_Crushing_Pressure_He[i] = max(self.Max_Crushing_Pressure_He[i], crushing_pressure_he)
-                            self.Max_Crushing_Pressure_N2[i] = max(self.Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
+                            Max_Crushing_Pressure_He[i] = max(Max_Crushing_Pressure_He[i], crushing_pressure_he)
+                            Max_Crushing_Pressure_N2[i] = max(Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
 
                         # END calc_crushing_pressure
 
@@ -1073,22 +1062,22 @@ class DiveState(object):
             # to Pascals.  Next, compute the ending radius for helium and nitrogen
             # critical nuclei in each compartment.
             for i in COMPARTMENT_RANGE:
-                crushing_pressure_pascals_he = (self.Max_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                crushing_pressure_pascals_he = (Max_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                crushing_pressure_pascals_n2 = (self.Max_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                crushing_pressure_pascals_n2 = (Max_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+                ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
 
-                ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+                ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
                 # A "regenerated" radius for each nucleus is now calculated based on the
                 # regeneration time constant.  This means that after application of
                 # crushing pressure and reduction in radius, a nucleus will slowly grow
                 # back to its original initial radius over a period of time.  This
                 # phenomenon is probabilistic in nature and depends on absolute temperature.
                 # It is independent of crushing pressure.
-                self.Regenerated_Radius_He[i] = self.Adjusted_Critical_Radius_He[i] + (ending_radius_he - self.Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+                self.Regenerated_Radius_He[i] = Adjusted_Critical_Radius_He[i] + (ending_radius_he - Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
 
-                self.Regenerated_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - self.Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+                self.Regenerated_Radius_N2[i] = Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
 
                 # In order to preserve reference back to the initial critical radii after
                 # regeneration, an "adjusted crushing pressure" for the nuclei in each
@@ -1100,9 +1089,9 @@ class DiveState(object):
                 # of the original crushing pressure, is then applied in the VPM Critical
                 # Volume Algorithm and the VPM Repetitive Algorithm.
 
-                crush_pressure_adjust_ratio_he = (ending_radius_he * (self.Adjusted_Critical_Radius_He[i] - self.Regenerated_Radius_He[i])) / (self.Regenerated_Radius_He[i] * (self.Adjusted_Critical_Radius_He[i] - ending_radius_he))
+                crush_pressure_adjust_ratio_he = (ending_radius_he * (Adjusted_Critical_Radius_He[i] - self.Regenerated_Radius_He[i])) / (self.Regenerated_Radius_He[i] * (Adjusted_Critical_Radius_He[i] - ending_radius_he))
 
-                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (self.Adjusted_Critical_Radius_N2[i] - self.Regenerated_Radius_N2[i])) / (self.Regenerated_Radius_N2[i] * (self.Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
+                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (Adjusted_Critical_Radius_N2[i] - self.Regenerated_Radius_N2[i])) / (self.Regenerated_Radius_N2[i] * (Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
 
                 adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
                 adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
@@ -1339,7 +1328,7 @@ class DiveState(object):
                 Last_Phase_Volume_Time[i] = 0.0
                 self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
                 self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
-                self.Max_Actual_Gradient[i] = 0.0
+                Max_Actual_Gradient[i] = 0.0
 
             # START critical_volume_loop
             # Purpose:
@@ -1589,23 +1578,23 @@ class DiveState(object):
                 for i in COMPARTMENT_RANGE:
                     if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
 
-                        self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+                        Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
 
                     elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
                         decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
 
                         integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
 
-                        self.Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+                        Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
 
                     else:
-                        self.Surface_Phase_Volume_Time[i] = 0.0
+                        Surface_Phase_Volume_Time[i] = 0.0
 
 
                 # END calc_surface_phase_volume_time
 
                 for i in COMPARTMENT_RANGE:
-                    Phase_Volume_Time[i] = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                    Phase_Volume_Time[i] = Deco_Phase_Volume_Time + Surface_Phase_Volume_Time[i]
                     Critical_Volume_Comparison = abs(Phase_Volume_Time[i] - Last_Phase_Volume_Time[i])
                     if Critical_Volume_Comparison <= 1.0:
                         Schedule_Converged = True
@@ -1687,7 +1676,7 @@ class DiveState(object):
                             if compartment_gradient <= 0.0:
                                 compartment_gradient = 0.0
 
-                            self.Max_Actual_Gradient[i] = max(self.Max_Actual_Gradient[i], compartment_gradient)
+                            Max_Actual_Gradient[i] = max(Max_Actual_Gradient[i], compartment_gradient)
 
                         # END self.calc_max_actual_gradient(Deco_Stop_Depth)
 
@@ -1757,7 +1746,7 @@ class DiveState(object):
 
                     for i in COMPARTMENT_RANGE:
 
-                        phase_volume_time = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                        phase_volume_time = Deco_Phase_Volume_Time + Surface_Phase_Volume_Time[i]
 
                         # Helium Calculations
                         adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
@@ -1831,32 +1820,32 @@ class DiveState(object):
                 # envisioned by Professor David E. Yount only months before his passing.
 
                 for i in COMPARTMENT_RANGE:
-                    max_actual_gradient_pascals = (self.Max_Actual_Gradient[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                    max_actual_gradient_pascals = (Max_Actual_Gradient[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
                     adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
                     adj_crush_pressure_n2_pascals = (Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                    if self.Max_Actual_Gradient[i] > Initial_Allowable_Gradient_N2[i]:
+                    if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_N2[i]:
                         new_critical_radius_n2 = self._new_critical_radius(max_actual_gradient_pascals, adj_crush_pressure_n2_pascals)
 
-                        self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i] + (self.Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
+                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
 
                     else:
-                        self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
+                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
 
-                    if self.Max_Actual_Gradient[i] > Initial_Allowable_Gradient_He[i]:
+                    if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_He[i]:
                         new_critical_radius_he = self._new_critical_radius(max_actual_gradient_pascals, adj_crush_pressure_he_pascals)
 
-                        self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i] + (self.Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
+                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
                     else:
-                        self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
+                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
 
                 # END vpm_repetitive_algorithm
 
                 for i in COMPARTMENT_RANGE:
-                    self.Max_Crushing_Pressure_He[i] = 0.0
-                    self.Max_Crushing_Pressure_N2[i] = 0.0
-                    self.Max_Actual_Gradient[i] = 0.0
+                    Max_Crushing_Pressure_He[i] = 0.0
+                    Max_Crushing_Pressure_N2[i] = 0.0
+                    Max_Actual_Gradient[i] = 0.0
 
                 self.Run_Time = 0.0
                 self.Segment_Number = 0
