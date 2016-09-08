@@ -25,8 +25,6 @@
 # authors and should not be interpreted as representing official policies, either expressed
 # or implied, of Bryan Waite, or Erik C. Baker.
 
-# import pycallgraph
-
 from enum import Enum, unique
 from math import log, trunc, exp, sqrt
 import datetime
@@ -674,8 +672,6 @@ class DiveState(object):
             # (Deco Ceiling Depth) is then used by the Decompression Stop subroutine
             # to determine the actual deco schedule.
 
-            # Side Effects: None
-
             # Since there are two sets of deco gradients being tracked, one for
             # helium and one for nitrogen, a "weighted allowable gradient" must be
             # computed each time based on the proportions of helium and nitrogen in
@@ -729,38 +725,55 @@ class DiveState(object):
 
         self.Segment_Time = temp_segment_time
 
-    def initialize_data(self):
+
+
+
+    def main(self):
         """
-        Purpose: Initialize the object with the data loaded from the input file
+        Purpose:
+        Main decompression loop. Checks that validates the input file, initializes the data
+        and loops over the dives.
 
         Side Effects: Sets
 
-        `self.Adjusted_Critical_Radius_He`,
-        `self.Adjusted_Critical_Radius_N2`,
-        `self.Altitude_of_Dive`,
-        `self.Amb_Pressure_Onset_of_Imperm`,
-        `self.Barometric_Pressure`,
-        `self.Gas_Tension_Onset_of_Imperm`,
-        `self.Helium_Pressure`,
-        `self.Helium_Time_Constant`,
-        `self.Initial_Critical_Radius_He`,
-        `self.Initial_Critical_Radius_N2`,
         `self.Max_Actual_Gradient`,
         `self.Max_Crushing_Pressure_He`,
         `self.Max_Crushing_Pressure_N2`,
-        `self.Nitrogen_Pressure`,
-        `self.Nitrogen_Time_Constant`,
-        `self.Pressure_Other_Gases_mmHg`,
         `self.Run_Time`,
-        `self.Segment_Number`,
-        `self.Surface_Phase_Volume_Time`,
+        `self.Segment_Number`
 
         or
 
-        Raises AltitudeException, ValueError
+        Raises an InputFileException
 
         Returns: None
         """
+
+        # Purpose: Check the the data loaded from the input file is valid
+
+        # Raises InputFileException, AltitudeException, ValueError
+
+        if self.settings_values.Regeneration_Time_Constant <= 0:
+            raise InputFileException("Regeneration_Time_Constant must be greater than 0")
+
+        if self.settings_values.Units == UnitsSW.FSW and self.altitude_values.Altitude_of_Dive > 30000.0:
+            raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
+
+        if self.settings_values.Units == UnitsSW.MSW and self.altitude_values.Altitude_of_Dive > 9144.0:
+            raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
+
+        # nitrogen
+        if self.settings_values.Critical_Radius_N2_Microns < 0.2 or self.settings_values.Critical_Radius_N2_Microns > 1.35:
+            raise ValueError("Bad Critical Radius N2 Microns: Critical_Radius_N2_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_N2_Microns)
+
+        # helium
+        if self.settings_values.Critical_Radius_He_Microns < 0.2 or self.settings_values.Critical_Radius_He_Microns > 1.35:
+            raise ValueError("Bad Critical_Radius_He_Microns: Critical_Radius_He_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_He_Microns)
+
+        # START initialize_data
+
+        # Purpose: Initialize the object with the data loaded from the input file
+
         # INITIALIZE CONSTANTS/VARIABLES
         self.settings_values.Constant_Pressure_Other_Gases = (self.settings_values.Pressure_Other_Gases_mmHg / 760.0) * self.settings_values.Units.toUnitsFactor()
         self.Run_Time = 0.0
@@ -793,19 +806,6 @@ class DiveState(object):
             # Purpose:  This subprogram updates gas loadings and adjusts critical radii
             # (as required) based on whether or not diver is acclimatized at altitude or
             # makes an ascent to altitude before the dive.
-
-            # Side Effects: Sets
-            # `self.Adjusted_Critical_Radius_He`,
-            # `self.Adjusted_Critical_Radius_N2`,
-            # `self.Barometric_Pressure`,
-            # `self.Helium_Pressure`,
-            # `self.Initial_Critical_Radius_He`,
-            # `self.Initial_Critical_Radius_N2`
-            # `self.Nitrogen_Pressure`,
-
-            # or
-
-            # Raises an AltitudeException
 
             ascent_to_altitude_time = self.altitude_values.Ascent_to_Altitude_Hours * 60.0
             time_at_altitude_before_dive = self.altitude_values.Hours_at_Altitude_Before_Dive * 60.0
@@ -899,1088 +899,7 @@ class DiveState(object):
                 self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
                 self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-
-    def profile_code_loop(self, dive):
-        """
-        Purpose:
-        PROCESS DIVE AS A SERIES OF ASCENT/DESCENT AND CONSTANT DEPTH
-        SEGMENTS. THIS ALLOWS FOR MULTI-LEVEL DIVES AND UNUSUAL PROFILES. UPDATE
-        GAS LOADINGS FOR EACH SEGMENT.  IF IT IS A DESCENT SEGMENT, CALC CRUSHING
-        PRESSURE ON CRITICAL RADII IN EACH COMPARTMENT.
-        "Instantaneous" descents are not used in the VPM.  All ascent/descent
-        segments must have a realistic rate of ascent/descent.  Unlike Haldanian
-        models, the VPM is actually more conservative when the descent rate is
-        slower because the effective crushing pressure is reduced.  Also, a
-        realistic actual supersaturation gradient must be calculated during
-        ascents as this affects critical radii adjustments for repetitive dives.
-
-        Profile codes: 1 = Ascent/Descent, 2 = Constant Depth, 99 = Decompress
-
-        Side Effects: Sets
-        `self.Depth`,
-        `self.Ending_Depth`,
-        `self.Mix_Number`,
-        `self.Rate`,
-        `self.Run_Time_End_of_Segment`
-        `self.Starting_Depth`,
-
-        or
-
-        Raises an InputFileException
-
-        Returns: None
-        """
-        for profile in dive.profile_codes:
-            if profile.profile_code == ProfileCode.Descent:
-                self.Starting_Depth = profile.starting_depth
-                self.Ending_Depth = profile.ending_depth
-                self.Rate = profile.rate
-                self.Mix_Number = profile.gasmix
-
-                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
-                if self.Ending_Depth > self.Starting_Depth:
-                    # START self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
-
-                    # Purpose: Compute the effective "crushing pressure" in each compartment as
-                    # a result of descent segment(s).  The crushing pressure is the gradient
-                    # (difference in pressure) between the outside ambient pressure and the
-                    # gas tension inside a VPM nucleus (bubble seed).  This gradient acts to
-                    # reduce (shrink) the radius smaller than its initial value at the surface.
-                    # This phenomenon has important ramifications because the smaller the radius
-                    # of a VPM nucleus, the greater the allowable supersaturation gradient upon
-                    # ascent.  Gas loading (uptake) during descent, especially in the fast
-                    # compartments, will reduce the magnitude of the crushing pressure.  The
-                    # crushing pressure is not cumulative over a multi-level descent.  It will
-                    # be the maximum value obtained in any one discrete segment of the overall
-                    # descent.  Thus, the program must compute and store the maximum crushing
-                    # pressure for each compartment that was obtained across all segments of
-                    # the descent profile.
-
-                    # The calculation of crushing pressure will be different depending on
-                    # whether or not the gradient is in the VPM permeable range (gas can diffuse
-                    # across skin of VPM nucleus) or the VPM impermeable range (molecules in
-                    # skin of nucleus are squeezed together so tight that gas can no longer
-                    # diffuse in or out of nucleus; the gas becomes trapped and further resists
-                    # the crushing pressure).  The solution for crushing pressure in the VPM
-                    # permeable range is a simple linear equation.  In the VPM impermeable
-                    # range, a cubic equation must be solved using a numerical method.
-
-                    # Separate crushing pressures are tracked for helium and nitrogen because
-                    # they can have different critical radii.  The crushing pressures will be
-                    # the same for helium and nitrogen in the permeable range of the model, but
-                    # they will start to diverge in the impermeable range.  This is due to
-                    # the differences between starting radius, radius at the onset of
-                    # impermeability, and radial compression in the impermeable range.
-
-                    # Side Effects: Sets
-                    # `self.Max_Crushing_Pressure_He`,
-                    # `self.Max_Crushing_Pressure_N2`
-
-
-                    # First, convert the Gradient for Onset of Impermeability from units of
-                    # atmospheres to diving pressure units (either fsw or msw) and to Pascals
-                    # (SI units).  The reason that the Gradient for Onset of Impermeability is
-                    # given in the program settings in units of atmospheres is because that is
-                    # how it was reported in the original research papers by Yount and
-                    # colleagues.
-
-                    gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()  # convert to diving units
-                    gradient_onset_of_imperm_pa = self.settings_values.Gradient_Onset_of_Imperm_Atm * ATM     # convert to Pascals
-
-                    # Assign values of starting and ending ambient pressures for descent segment
-
-                    starting_ambient_pressure = self.Starting_Depth + self.Barometric_Pressure
-                    ending_ambient_pressure = self.Ending_Depth + self.Barometric_Pressure
-
-                    # MAIN LOOP WITH NESTED DECISION TREE
-                    # For each compartment, the program computes the starting and ending
-                    # gas tensions and gradients.  The VPM is different than some dissolved gas
-                    # algorithms, Buhlmann for example, in that it considers the pressure due to
-                    # oxygen, carbon dioxide, and water vapor in each compartment in addition to
-                    # the inert gases helium and nitrogen.  These "other gases" are included in
-                    # the calculation of gas tensions and gradients.
-
-                    for i in COMPARTMENT_RANGE:
-                        starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
-
-                        starting_gradient = starting_ambient_pressure - starting_gas_tension
-
-                        ending_gas_tension = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
-
-                        ending_gradient = ending_ambient_pressure - ending_gas_tension
-
-                        # Compute radius at onset of impermeability for helium and nitrogen
-                        # critical radii
-
-                        radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
-
-                        radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
-
-                        # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
-                        # Crushing pressures will be the same for helium and nitrogen
-                        if ending_gradient <= gradient_onset_of_imperm:
-                            crushing_pressure_he = ending_ambient_pressure - ending_gas_tension
-                            crushing_pressure_n2 = ending_ambient_pressure - ending_gas_tension
-
-                        # SECOND BRANCH OF DECISION TREE - IMPERMEABLE RANGE
-                        # Both the ambient pressure and the gas tension at the onset of
-                        # impermeability must be computed in order to properly solve for the ending
-                        # radius and resultant crushing pressure.  The first decision block
-                        # addresses the special case when the starting gradient just happens to be
-                        # equal to the gradient for onset of impermeability (not very likely!).
-
-                        # if ending_gradient > gradient_onset_of_imperm:
-                        else:
-
-                            if starting_gradient == gradient_onset_of_imperm:
-                                self.Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
-                                self.Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
-                            # In most cases, a subroutine will be called to find these values using a
-                            # numerical method.
-                            if starting_gradient < gradient_onset_of_imperm:
-                                # START onset_of_impermeability
-
-                                # Purpose:  This subroutine uses the Bisection Method to find the ambient
-                                # pressure and gas tension at the onset of impermeability for a given
-                                # compartment.  Source:  "Numerical Recipes in Fortran 77",
-                                # Cambridge University Press, 1992.
-
-                                # Side Effects: Sets
-                                # `self.Amb_Pressure_Onset_of_Imperm`,
-                                # `self.Gas_Tension_Onset_of_Imperm`
-
-                                # or
-
-                                # Raises a RootException
-
-                                # First convert the Gradient for Onset of Impermeability to the diving
-                                # pressure units that are being used
-
-                                gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()
-
-                                # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
-                                # In this case, we are solving for time - the time when the ambient pressure
-                                # minus the gas tension will be equal to the Gradient for Onset of
-                                # Impermeability.  The low bound for time is set at zero and the high
-                                # bound is set at the elapsed time (segment time) it took to go from the
-                                # starting ambient pressure to the ending ambient pressure.  The desired
-                                # ambient pressure and gas tension at the onset of impermeability will
-                                # be found somewhere between these endpoints.  The algorithm checks to
-                                # make sure that the solution lies in between these bounds by first
-                                # computing the low bound and high bound function values.
-
-                                initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-                                initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-                                helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
-                                nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-                                low_bound = 0.0
-
-                                high_bound = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
-
-                                starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
-
-                                function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
-
-                                high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-                                high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-                                ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
-
-                                function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
-
-                                if(function_at_high_bound * function_at_low_bound) >= 0.0:
-                                    raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
-
-                                # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
-                                # THE DESIRED ACCURACY IS FOUND
-                                # Note: the program allows for up to 100 iterations.  Normally an exit will
-                                # be made from the loop well before that number.  If, for some reason, the
-                                # program exceeds 100 iterations, there will be a pause to alert the user.
-
-                                if function_at_low_bound < 0.0:
-                                    time = low_bound
-                                    differential_change = high_bound - low_bound
-                                else:
-                                    time = high_bound
-                                    differential_change = low_bound - high_bound
-
-                                for j in range(100):
-                                    last_diff_change = differential_change
-                                    differential_change = last_diff_change * 0.5
-                                    mid_range_time = time + differential_change
-
-                                    mid_range_ambient_pressure = (starting_ambient_pressure + self.Rate * mid_range_time)
-
-                                    mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-                                    mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-                                    gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
-
-                                    function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
-
-                                    if function_at_mid_range <= 0.0:
-                                        time = mid_range_time
-
-                                    # When a solution with the desired accuracy is found, the program breaks
-                                    if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
-                                        break
-
-                                self.Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
-                                self.Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
-                                # END onset_of_impermeability
-
-                            # Next, using the values for ambient pressure and gas tension at the onset
-                            # of impermeability, the equations are set up to process the calculations
-                            # through the radius root finder subroutine.  This subprogram will find the
-                            # root (solution) to the cubic equation using a numerical method.  In order
-                            # to do this efficiently, the equations are placed in the form
-                            # Ar^3 - Br^2 - C = 0, where r is the ending radius after impermeable
-                            # compression.  The coefficients A, B, and C for helium and nitrogen are
-                            # computed and passed to the subroutine as arguments.  The high and low
-                            # bounds to be used by the numerical method of the subroutine are also
-                            # computed (see separate page posted on Deco List ftp site entitled
-                            # "VPM: Solving for radius in the impermeable regime").  The subprogram
-                            # will return the value of the ending radius and then the crushing
-                            # pressures for helium and nitrogen can be calculated.
-                            ending_ambient_pressure_pa = (ending_ambient_pressure / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                            amb_press_onset_of_imperm_pa = (self.Amb_Pressure_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                            gas_tension_onset_of_imperm_pa = (self.Gas_Tension_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                            crushing_pressure_he = self._crushing_pressure_helper(radius_onset_of_imperm_he, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
-
-                            crushing_pressure_n2 = self._crushing_pressure_helper(radius_onset_of_imperm_n2, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
-
-                        # UPDATE VALUES OF MAX CRUSHING PRESSURE IN Object ARRAYS
-                        self.Max_Crushing_Pressure_He[i] = max(self.Max_Crushing_Pressure_He[i], crushing_pressure_he)
-                        self.Max_Crushing_Pressure_N2[i] = max(self.Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
-
-                    # END self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
-
-                # the error seems unnecessary
-                if self.Ending_Depth > self.Starting_Depth:
-                    word = 'Descent'
-                elif self.Starting_Depth > self.Ending_Depth:
-                    word = 'Ascent '
-                else:
-                    word = 'ERROR'
-
-                self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, self.Rate)
-
-            elif profile.profile_code == ProfileCode.Constant:
-                self.Depth = profile.depth
-                self.Run_Time_End_of_Segment = profile.run_time_at_end_of_segment
-                self.Mix_Number = profile.gasmix
-
-                self.gas_loadings_constant_depth(self.Depth, self.Run_Time_End_of_Segment)
-
-                self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Depth)
-            else:
-                break
-
-    def decompression_loop(self, dive):
-        """
-        Purpose:
-        BEGIN PROCESS OF ASCENT AND DECOMPRESSION
-
-        Side Effects: Sets
-
-        `self.Deco_Phase_Volume_Time`,
-        `self.Deepest_Possible_Stop_Depth`,
-        `self.Depth_Change`,
-        `self.Depth_Change`,
-        `self.He_Pressure_Start_of_Ascent`,
-        `self.He_Pressure_Start_of_Deco_Zone`,
-        `self.Last_Phase_Volume_Time`,
-        `self.Last_Run_Time`,
-        `self.Max_Actual_Gradient`
-        `self.Mix_Change`,
-        `self.Mix_Change`,
-        `self.Mix_Number`,
-        `self.N2_Pressure_Start_of_Ascent`,
-        `self.N2_Pressure_Start_of_Deco_Zone`,
-        `self.Number_of_Changes`,
-        `self.Rate_Change`,
-        `self.Rate_Change`,
-        `self.Rate`,
-        `self.Run_Time_Start_of_Ascent`,
-        `self.Run_Time_Start_of_Deco_Zone`,
-        `self.Segment_Number_Start_of_Ascent`,
-        `self.Starting_Depth`,
-        `self.Step_Size_Change`,
-        `self.Step_Size_Change`,
-        `self.Step_Size`,
-
-        Returns: None
-        """
-        # First, calculate the regeneration of critical radii that takes place over
-        # the dive time.  The regeneration time constant has a time scale of weeks
-        # so this will have very little impact on dives of normal length, but will
-        # have major impact for saturation dives.
-
-        # START nuclear_regeneration
-
-        # Purpose: This subprogram calculates the regeneration of VPM critical
-        # radii that takes place over the dive time.  The regeneration time constant
-        # has a time scale of weeks so this will have very little impact on dives of
-        # normal length, but will have a major impact for saturation dives.
-
-        # Side Effects: Sets
-        # `self.Adjusted_Crushing_Pressure_He`,
-        # `self.Adjusted_Crushing_Pressure_N2`
-        # `self.Regenerated_Radius_He`,
-        # `self.Regenerated_Radius_N2`,
-
-        # First convert the maximum crushing pressure obtained for each compartment
-        # to Pascals.  Next, compute the ending radius for helium and nitrogen
-        # critical nuclei in each compartment.
-        for i in COMPARTMENT_RANGE:
-            crushing_pressure_pascals_he = (self.Max_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-            crushing_pressure_pascals_n2 = (self.Max_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-            ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
-
-            ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
-            # A "regenerated" radius for each nucleus is now calculated based on the
-            # regeneration time constant.  This means that after application of
-            # crushing pressure and reduction in radius, a nucleus will slowly grow
-            # back to its original initial radius over a period of time.  This
-            # phenomenon is probabilistic in nature and depends on absolute temperature.
-            # It is independent of crushing pressure.
-            self.Regenerated_Radius_He[i] = self.Adjusted_Critical_Radius_He[i] + (ending_radius_he - self.Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
-
-            self.Regenerated_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - self.Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
-
-            # In order to preserve reference back to the initial critical radii after
-            # regeneration, an "adjusted crushing pressure" for the nuclei in each
-            # compartment must be computed.  In other words, this is the value of
-            # crushing pressure that would have reduced the original nucleus to the
-            # to the present radius had regeneration not taken place.  The ratio
-            # for adjusting crushing pressure is obtained from algebraic manipulation
-            # of the standard VPM equations.  The adjusted crushing pressure, in lieu
-            # of the original crushing pressure, is then applied in the VPM Critical
-            # Volume Algorithm and the VPM Repetitive Algorithm.
-
-            crush_pressure_adjust_ratio_he = (ending_radius_he * (self.Adjusted_Critical_Radius_He[i] - self.Regenerated_Radius_He[i])) / (self.Regenerated_Radius_He[i] * (self.Adjusted_Critical_Radius_He[i] - ending_radius_he))
-
-            crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (self.Adjusted_Critical_Radius_N2[i] - self.Regenerated_Radius_N2[i])) / (self.Regenerated_Radius_N2[i] * (self.Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
-
-            adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
-            adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
-
-            self.Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-            self.Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-
-        # END nuclear_regeneration
-
-        #   CALCULATE INITIAL ALLOWABLE GRADIENTS FOR ASCENT
-        #   This is based on the maximum effective crushing pressure on critical radii
-        #   in each compartment achieved during the dive profile.
-        # START self.calc_initial_allowable_gradient()
-
-        # Purpose: This subprogram calculates the initial allowable gradients for
-        # helium and nitrogen in each compartment.  These are the gradients that
-        # will be used to set the deco ceiling on the first pass through the deco
-        # loop.  If the Critical Volume Algorithm is set to False, then these
-        # gradients will determine the final deco schedule.  Otherwise, if the
-        # Critical Volume Algorithm is set to True, these gradients will be further
-        # "relaxed" by the Critical Volume Algorithm subroutine.  The initial
-        # allowable gradients are referred to as "PssMin" in the papers by Yount
-        # and colleagues, i.e., the minimum supersaturation pressure gradients
-        # that will probe bubble formation in the VPM nuclei that started with the
-        # designated minimum initial radius (critical radius).
-
-        # The initial allowable gradients are computed directly from the
-        # "regenerated" radii after the Nuclear Regeneration subroutine.  These
-        # gradients are tracked separately for helium and nitrogen.
-
-        # Side Effects: Sets
-        # `self.Allowable_Gradient_He`,
-        # `self.Allowable_Gradient_N2`
-        # `self.Initial_Allowable_Gradient_He`,
-        # `self.Initial_Allowable_Gradient_N2`,
-
-        # The initial allowable gradients are computed in Pascals and then converted
-        # to the diving pressure units.  Two different sets of arrays are used to
-        # save the calculations - Initial Allowable Gradients and Allowable
-        # Gradients.  The Allowable Gradients are assigned the values from Initial
-        # Allowable Gradients however the Allowable Gradients can be changed later
-        # by the Critical Volume subroutine.  The values for the Initial Allowable
-        # Gradients are saved in a global array for later use by both the Critical
-        # Volume subroutine and the VPM Repetitive Algorithm subroutine.
-
-        for i in COMPARTMENT_RANGE:
-            initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
-
-            initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
-
-            self.Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * self.settings_values.Units.toUnitsFactor()
-            self.Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * self.settings_values.Units.toUnitsFactor()
-
-            self.Allowable_Gradient_He[i] = self.Initial_Allowable_Gradient_He[i]
-            self.Allowable_Gradient_N2[i] = self.Initial_Allowable_Gradient_N2[i]
-
-        # END self.calc_initial_allowable_gradient()
-
-        #     SAVE VARIABLES AT START OF ASCENT (END OF BOTTOM TIME) SINCE THESE WILL
-        #     BE USED LATER TO COMPUTE THE FINAL ASCENT PROFILE THAT IS WRITTEN TO THE
-        #     OUTPUT FILE.
-        #     The VPM uses an iterative process to compute decompression schedules so
-        #     there will be more than one pass through the decompression loop.
-
-        for i in COMPARTMENT_RANGE:
-            self.He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
-            self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
-
-        self.Run_Time_Start_of_Ascent = self.Run_Time
-        self.Segment_Number_Start_of_Ascent = self.Segment_Number
-
-        #     INPUT PARAMETERS TO BE USED FOR STAGED DECOMPRESSION AND SAVE IN ARRAYS.
-        #     ASSIGN INITIAL PARAMETERS TO BE USED AT START OF ASCENT
-        #     The user has the ability to change mix, ascent rate, and step size in any
-        #     combination at any depth during the ascent.
-
-        for profile in dive.profile_codes:
-            if profile.profile_code == ProfileCode.Ascent:
-                self.Number_of_Changes = profile.number_of_ascent_parameter_changes
-                self.Depth_Change = [0.0] * self.Number_of_Changes
-                self.Mix_Change = [0.0] * self.Number_of_Changes
-                self.Rate_Change = [0.0] * self.Number_of_Changes
-                self.Step_Size_Change = [0.0] * self.Number_of_Changes
-
-                for i, ascents in enumerate(profile.ascent_summary):
-                    self.Depth_Change[i] = ascents.starting_depth
-                    self.Mix_Change[i] = ascents.gasmix
-                    self.Rate_Change[i] = ascents.rate
-                    self.Step_Size_Change[i] = ascents.step_size
-
-                self.Starting_Depth = self.Depth_Change[0]
-                self.Mix_Number = self.Mix_Change[0]
-                self.Rate = self.Rate_Change[0]
-                self.Step_Size = self.Step_Size_Change[0]
-
-        # CALCULATE THE DEPTH WHERE THE DECOMPRESSION ZONE BEGINS FOR THIS PROFILE
-        # BASED ON THE INITIAL ASCENT PARAMETERS AND WRITE THE DEEPEST POSSIBLE
-        # DECOMPRESSION STOP DEPTH TO THE OUTPUT FILE
-        # Knowing where the decompression zone starts is very important.  Below
-        # that depth there is no possibility for bubble formation because there
-        # will be no supersaturation gradients.  Deco stops should never start
-        # below the deco zone.  The deepest possible stop deco stop depth is
-        # defined as the next "standard" stop depth above the point where the
-        # leading compartment enters the deco zone.  Thus, the program will not
-        # base this calculation on step sizes larger than 10 fsw or 3 msw.  The
-        # deepest possible stop depth is not used in the program, per se, rather
-        # it is information to tell the diver where to start putting on the brakes
-        # during ascent.  This should be prominently displayed by any deco program.
-
-        self.calc_start_of_deco_zone(self.Starting_Depth, self.Rate)
-
-        if self.settings_values.Units == UnitsSW.FSW:
-            if self.Step_Size < 10.0:
-                rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
-            else:
-                rounding_op = (self.Depth_Start_of_Deco_Zone / 10.0) - 0.5
-                self.Deepest_Possible_Stop_Depth = round(rounding_op) * 10.0
-
-        else:
-            if self.Step_Size < 3.0:
-                rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
-            else:
-                rounding_op = (self.Depth_Start_of_Deco_Zone / 3.0) - 0.5
-                self.Deepest_Possible_Stop_Depth = round(rounding_op) * 3.0
-
-        #     TEMPORARILY ASCEND PROFILE TO THE START OF THE DECOMPRESSION ZONE, SAVE
-        #     VARIABLES AT THIS POINT, AND INITIALIZE VARIABLES FOR CRITICAL VOLUME LOOP
-        #     The iterative process of the VPM Critical Volume Algorithm will operate
-        #     only in the decompression zone since it deals with excess gas volume
-        #     released as a result of supersaturation gradients (not possible below the
-        #     decompression zone).
-
-        self.gas_loadings_ascent_descent(self.Starting_Depth, self.Depth_Start_of_Deco_Zone, self.Rate)
-        self.Run_Time_Start_of_Deco_Zone = self.Run_Time
-        self.Deco_Phase_Volume_Time = 0.0
-        self.Last_Run_Time = 0.0
-
-        for i in COMPARTMENT_RANGE:
-            self.Last_Phase_Volume_Time[i] = 0.0
-            self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
-            self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
-            self.Max_Actual_Gradient[i] = 0.0
-
-        # START critical_volume_loop
-        # Purpose:
-        # If the Critical Volume
-        # Algorithm is toggled False in the program settings, there will only be
-        # one pass through this loop.  Otherwise, there will be two or more passes
-        # through this loop until the deco schedule is "converged" - that is when a
-        # comparison between the phase volume time of the present iteration and the
-        # last iteration is less than or equal to one minute.  This implies that
-        # the volume of released gas in the most recent iteration differs from the
-        # "critical" volume limit by an acceptably small amount.  The critical
-        # volume limit is set by the Critical Volume Parameter Lambda in the program
-        # settings (default setting is 7500 fsw-min with adjustability range from
-        # from 6500 to 8300 fsw-min according to Bruce Wienke).
-
-        # Side Effects:
-
-        # `self.Critical_Volume_Comparison`,
-        # `self.Deco_Phase_Volume_Time`,
-        # `self.Deco_Stop_Depth`,
-        # `self.Ending_Depth`,
-        # `self.First_Stop_Depth`,
-        # `self.Helium_Pressure`,
-        # `self.Last_Phase_Volume_Time`,
-        # `self.Mix_Number`,
-        # `self.Nitrogen_Pressure`
-        # `self.Phase_Volume_Time`,
-        # `self.Rate`,
-        # `self.Run_Time`,
-        # `self.Run_Time`,
-        # `self.Segment_Number`,
-        # `self.Starting_Depth`,
-        # `self.Step_Size`,
-
-        # or
-
-        # Raises a DecompressionStepException
-
-        Schedule_Converged = False
-
-        while True:
-            # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
-            # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
-            # SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
-
-            # START CALC_ASCENT_CEILING
-
-            # Purpose: This subprogram calculates the ascent ceiling (the safe ascent
-            # depth) in each compartment, based on the allowable gradients, and then
-            # finds the deepest ascent ceiling across all compartments.
-
-            # Side Effects: Sets
-            # `self.Ascent_Ceiling_Depth`
-
-            compartment_ascent_ceiling = [0.0] * ARRAY_LENGTH
-
-            # Since there are two sets of allowable gradients being tracked, one for
-            # helium and one for nitrogen, a "weighted allowable gradient" must be
-            # computed each time based on the proportions of helium and nitrogen in
-            # each compartment.  This proportioning follows the methodology of
-            # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
-            # such as after extended periods of oxygen breathing, then the minimum value
-            # across both gases will be used.  It is important to note that if a
-            # compartment is empty of helium and nitrogen, then the weighted allowable
-            # gradient formula cannot be used since it will result in division by zero.
-
-            for i in COMPARTMENT_RANGE:
-                gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
-
-                if gas_loading > 0.0:
-                    weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * self.Helium_Pressure[i] + self.Allowable_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
-                    tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
-
-                else:
-                    weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
-                    tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
-
-                #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
-                #     the vacuum of outer space!
-                if tolerated_ambient_pressure < 0.0:
-                    tolerated_ambient_pressure = 0.0
-
-                #     The Ascent Ceiling Depth is computed in a loop after all of the individual
-                #     compartment ascent ceilings have been calculated.  It is important that
-                #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
-                #     be extracted from the compartment values and not be compared against some
-                #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
-                #     compared against zero, this could cause a program lockup because sometimes
-                #     the Ascent Ceiling Depth needs to be negative (but not less than zero
-                #     absolute ambient pressure) in order to decompress to the last stop at zero
-                #     depth.
-
-                compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
-
-            self.Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
-
-            # END CALC_ASCENT_CEILING
-
-            if self.Ascent_Ceiling_Depth <= 0.0:
-                self.Deco_Stop_Depth = 0.0
-            else:
-                rounding_operation2 = (self.Ascent_Ceiling_Depth / self.Step_Size) + 0.5
-                self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
-
-            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
-                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
-
-            # PERFORM A SEPARATE "PROJECTED ASCENT" OUTSIDE OF THE MAIN PROGRAM TO MAKE
-            # SURE THAT AN INCREASE IN GAS LOADINGS DURING ASCENT TO THE FIRST STOP WILL
-            # NOT CAUSE A VIOLATION OF THE DECO CEILING.  IF SO, ADJUST THE FIRST STOP
-            # DEEPER BASED ON STEP SIZE UNTIL A SAFE ASCENT CAN BE MADE.
-            # Note: this situation is a possibility when ascending from extremely deep
-            # dives or due to an unusual gas mix selection.
-            # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
-            # DECO ZONE.
-
-            # START self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
-
-            # Purpose: This subprogram performs a simulated ascent outside of the main
-            # program to ensure that a deco ceiling will not be violated due to unusual
-            # gas loading during ascent (on-gassing).  If the deco ceiling is violated,
-            # the stop depth will be adjusted deeper by the step size until a safe
-            # ascent can be made.
-
-            # Side Effects: Sets
-            # `self.Deco_Stop_Depth`
-
-            new_ambient_pressure = self.Deco_Stop_Depth + self.Barometric_Pressure
-            starting_ambient_pressure = self.Depth_Start_of_Deco_Zone + self.Barometric_Pressure
-
-            initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-            initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-            helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
-            nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-            temp_gas_loading = [0.0] * ARRAY_LENGTH
-            allowable_gas_loading = [0.0] * ARRAY_LENGTH
-            initial_helium_pressure = [0.0] * ARRAY_LENGTH
-            initial_nitrogen_pressure = [0.0] * ARRAY_LENGTH
-
-            for i in COMPARTMENT_RANGE:
-                initial_helium_pressure[i] = self.Helium_Pressure[i]
-                initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
-
-            while True:
-                ending_ambient_pressure = new_ambient_pressure
-
-                segment_time = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
-
-                for i in COMPARTMENT_RANGE:
-                    temp_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, self.Helium_Time_Constant[i], initial_helium_pressure[i])
-
-                    temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
-
-                    temp_gas_loading[i] = temp_helium_pressure + temp_nitrogen_pressure
-
-                    if temp_gas_loading[i] > 0.0:
-                        weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * temp_helium_pressure + self.Allowable_Gradient_N2[i] * temp_nitrogen_pressure) / temp_gas_loading[i]
-                    else:
-                        weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
-
-                    allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - self.settings_values.Constant_Pressure_Other_Gases
-
-                end_sub = True # TODO Build this condition into the while
-                for j in COMPARTMENT_RANGE:
-                    if temp_gas_loading[j] > allowable_gas_loading[j]:
-                        new_ambient_pressure = ending_ambient_pressure + self.Step_Size
-                        self.Deco_Stop_Depth = self.Deco_Stop_Depth + self.Step_Size
-                        end_sub = False
-
-                        break
-
-                if end_sub:
-                    break
-            # END self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
-
-            if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
-                raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
-
-            #     HANDLE THE SPECIAL CASE WHEN NO DECO STOPS ARE REQUIRED - ASCENT CAN BE
-            #     MADE DIRECTLY TO THE SURFACE
-            #     Write ascent data to output file and exit the Critical Volume Loop.
-
-            if self.Deco_Stop_Depth == 0.0:
-                for i in COMPARTMENT_RANGE:
-                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
-
-                self.Run_Time = self.Run_Time_Start_of_Ascent
-                self.Segment_Number = self.Segment_Number_Start_of_Ascent
-                self.Starting_Depth = self.Depth_Change[0]
-                self.Ending_Depth = 0.0
-                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
-
-                self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
-                break
-
-            # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
-            # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
-
-            self.Starting_Depth = self.Depth_Start_of_Deco_Zone
-            self.First_Stop_Depth = self.Deco_Stop_Depth
-
-            # START deco_stop_loop_block_within_critical_volume_loop
-
-            # Purpose:
-            # DECO STOP LOOP BLOCK WITHIN CRITICAL VOLUME LOOP
-            # This loop computes a decompression schedule to the surface during each
-            # iteration of the critical volume loop.  No output is written from this
-            # loop, rather it computes a schedule from which the in-water portion of the
-            # total phase volume time (Deco_Phase_Volume_Time) can be extracted.  Also,
-            # the gas loadings computed at the end of this loop are used in the subroutine
-            # which computes the out-of-water portion of the total phase volume time
-            # (Surface_Phase_Volume_Time) for that schedule.
-
-            # Note that exit is made from the loop after last ascent is made to a deco
-            # stop depth that is less than or equal to zero.  A final deco stop less
-            # than zero can happen when the user makes an odd step size change during
-            # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
-
-            # Side Effects: Sets
-            # `self.Deco_Stop_Depth`,
-            # `self.Last_Run_Time`
-            # `self.Next_Stop`,
-            # `self.Starting_Depth`,
-
-            while True:
-                self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
-
-                if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
-                    break
-
-                if self.Number_of_Changes > 1:
-                    for i in range(1, self.Number_of_Changes):
-                        if self.Depth_Change[i] >= self.Deco_Stop_Depth:
-                            self.Mix_Number = self.Mix_Change[i]
-                            self.Rate = self.Rate_Change[i]
-                            self.Step_Size = self.Step_Size_Change[i]
-
-                self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
-
-                self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
-
-                self.Starting_Depth = self.Deco_Stop_Depth
-                self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                self.Deco_Stop_Depth = self.Next_Stop
-                self.Last_Run_Time = self.Run_Time
-
-            # END deco_stop_loop_block_within_critical_volume_loop
-
-            # COMPUTE TOTAL PHASE VOLUME TIME AND MAKE CRITICAL VOLUME COMPARISON
-            # The deco phase volume time is computed from the run time.  The surface
-            # phase volume time is computed in a subroutine based on the surfacing gas
-            # loadings from previous deco loop block.  Next the total phase volume time
-            # (in-water + surface) for each compartment is compared against the previous
-            # total phase volume time.  The schedule is converged when the difference is
-            # less than or equal to 1 minute in any one of the ARRAY_LENGTH compartments.
-
-            # Note:  the "phase volume time" is somewhat of a mathematical concept.
-            # It is the time divided out of a total integration of supersaturation
-            # gradient x time (in-water and surface).  This integration is multiplied
-            # by the excess bubble number to represent the amount of free-gas released
-            # as a result of allowing a certain number of excess bubbles to form.
-            self.Deco_Phase_Volume_Time = self.Run_Time - self.Run_Time_Start_of_Deco_Zone
-
-            # START calc_surface_phase_volume_time
-
-            # Purpose: This subprogram computes the surface portion of the total phase
-            # volume time.  This is the time factored out of the integration of
-            # supersaturation gradient x time over the surface interval.  The VPM
-            # considers the gradients that allow bubbles to form or to drive bubble
-            # growth both in the water and on the surface after the dive.
-
-            # This subroutine is a new development to the VPM algorithm in that it
-            # computes the time course of supersaturation gradients on the surface
-            # when both helium and nitrogen are present.  Refer to separate write-up
-            # for a more detailed explanation of this algorithm.
-
-            # Side Effects: Sets
-            # `self.Surface_Phase_Volume_Time`
-
-            surface_inspired_n2_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-            for i in COMPARTMENT_RANGE:
-                if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
-
-                    self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-
-                elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
-                    decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
-
-                    integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
-
-                    self.Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-
-                else:
-                    self.Surface_Phase_Volume_Time[i] = 0.0
-
-
-            # END calc_surface_phase_volume_time
-
-            for i in COMPARTMENT_RANGE:
-                self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
-                self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
-                if self.Critical_Volume_Comparison <= 1.0:
-                    Schedule_Converged = True
-
-            # There are two options here.  If the Critical Volume Algorithm setting is
-            # True and the schedule is converged, or the Critical Volume Algorithm
-            # setting was False in the first place, the program will re-assign variables
-            # to their values at the start of ascent (end of bottom time) and process
-            # a complete decompression schedule once again using all the same ascent
-            # parameters and first stop depth.  This decompression schedule will match
-            # the last iteration of the Critical Volume Loop and the program will write
-            # the final deco schedule to the output file.
-
-            # Note: if the Critical Volume Algorithm setting was False, the final deco
-            # schedule will be based on "Initial Allowable Supersaturation Gradients."
-            # If it was True, the final schedule will be based on "Adjusted Allowable
-            # Supersaturation Gradients" (gradients that are "relaxed" as a result of
-            # the Critical Volume Algorithm).
-
-            # If the Critical Volume Algorithm setting is True and the schedule is not
-            # converged, the program will re-assign variables to their values at the
-            # start of the deco zone and process another trial decompression schedule.
-
-            if Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
-                # START critical_volume_decision_tree
-
-                # """Purpose:
-                #
-                # Side Effects: Sets
-                #
-                # `self.Deco_Stop_Depth`,
-                # `self.Helium_Pressure`,
-                # `self.Last_Run_Time`,
-                # `self.Mix_Number`,
-                # `self.Next_Stop`
-                # `self.Nitrogen_Pressure`,
-                # `self.Rate`,
-                # `self.Run_Time`,
-                # `self.Segment_Number`,
-                # `self.Starting_Depth`,
-                # `self.Step_Size`,
-                # `self.Stop_Time`,
-                for i in COMPARTMENT_RANGE:
-                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
-                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
-
-                self.Run_Time = self.Run_Time_Start_of_Ascent
-                self.Segment_Number = self.Segment_Number_Start_of_Ascent
-                self.Starting_Depth = self.Depth_Change[0]
-                self.Mix_Number = self.Mix_Change[0]
-                self.Rate = self.Rate_Change[0]
-                self.Step_Size = self.Step_Size_Change[0]
-                self.Deco_Stop_Depth = self.First_Stop_Depth
-                self.Last_Run_Time = 0.0
-
-                # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
-
-                while True:
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
-                    # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
-                    # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
-                    # If there is a repetitive dive, this will be used later in the VPM
-                    # Repetitive Algorithm to adjust the values for critical radii.
-
-
-
-                    # START self.calc_max_actual_gradient(self.Deco_Stop_Depth)
-
-                    # Purpose: This subprogram calculates the actual supersaturation gradient
-                    # obtained in each compartment as a result of the ascent profile during
-                    # decompression.  Similar to the concept with crushing pressure, the
-                    # supersaturation gradients are not cumulative over a multi-level, staged
-                    # ascent.  Rather, it will be the maximum value obtained in any one discrete
-                    # step of the overall ascent.  Thus, the program must compute and store the
-                    # maximum actual gradient for each compartment that was obtained across all
-                    # steps of the ascent profile.  This subroutine is invoked on the last pass
-                    # through the deco stop loop block when the final deco schedule is being
-                    # generated.
-
-                    # The max actual gradients are later used by the VPM Repetitive Algorithm to
-                    # determine if adjustments to the critical radii are required.  If the max
-                    # actual gradient did not exceed the initial allowable gradient, then no
-                    # adjustment will be made.  However, if the max actual gradient did exceed
-                    # the initial allowable gradient, such as permitted by the Critical Volume
-                    # Algorithm, then the critical radius will be adjusted (made larger) on the
-                    # repetitive dive to compensate for the bubbling that was allowed on the
-                    # previous dive.  The use of the max actual gradients is intended to prevent
-                    # the repetitive algorithm from being overly conservative.
-
-                    # Side Effects: Sets
-                    # `self.Max_Actual_Gradient`
-
-                    # Note: negative supersaturation gradients are meaningless for this
-                    # application, so the values must be equal to or greater than zero.
-
-                    for i in COMPARTMENT_RANGE:
-                        compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases) - (self.Deco_Stop_Depth + self.Barometric_Pressure)
-                        if compartment_gradient <= 0.0:
-                            compartment_gradient = 0.0
-
-                        self.Max_Actual_Gradient[i] = max(self.Max_Actual_Gradient[i], compartment_gradient)
-
-                    # END self.calc_max_actual_gradient(self.Deco_Stop_Depth)
-
-
-
-
-                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
-                    if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
-                        break
-
-                    if self.Number_of_Changes > 1:
-                        for i in range(1, self.Number_of_Changes):
-                            if self.Depth_Change[i] >= self.Deco_Stop_Depth:
-                                self.Mix_Number = self.Mix_Change[i]
-                                self.Rate = self.Rate_Change[i]
-                                self.Step_Size = self.Step_Size_Change[i]
-
-                    self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
-                    self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
-                    # This next bit just rounds up the stop time at the first stop to be in
-                    # whole increments of the minimum stop time (to make for a nice deco table).
-
-                    if self.Last_Run_Time == 0.0:
-                        self.Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
-                    else:
-                        self.Stop_Time = self.Run_Time - self.Last_Run_Time
-
-                    # DURING FINAL DECOMPRESSION SCHEDULE, IF MINIMUM STOP TIME PARAMETER IS A
-                    # WHOLE NUMBER (i.e. 1 minute) THEN WRITE DECO SCHEDULE USING INTEGER
-                    # NUMBERS (looks nicer).  OTHERWISE, USE DECIMAL NUMBERS.
-                    # Note: per the request of a noted exploration diver(!), program now allows
-                    # a minimum stop time of less than one minute so that total ascent time can
-                    # be minimized on very long dives.  In fact, with step size set at 1 fsw or
-                    # 0.2 msw and minimum stop time set at 0.1 minute (6 seconds), a near
-                    # continuous decompression schedule can be computed.
-
-                    if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
-                        self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(self.Stop_Time))
-                    else:
-                        self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
-
-                    self.Starting_Depth = self.Deco_Stop_Depth
-                    self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                    self.Deco_Stop_Depth = self.Next_Stop
-                    self.Last_Run_Time = self.Run_Time
-
-                # END critical_volume_decision_tree
-
-            else:
-                # START critical_volume()
-
-                # Purpose: This subprogram applies the VPM Critical Volume Algorithm.  This
-                # algorithm will compute "relaxed" gradients for helium and nitrogen based
-                # on the setting of the Critical Volume Parameter Lambda.
-
-                # Side Effects: Sets
-                # `self.Allowable_Gradient_He`,
-                # `self.Allowable_Gradient_N2`
-
-                # Note:  Since the Critical Volume Parameter Lambda was defined in units of
-                # fsw-min in the original papers by Yount and colleagues, the same
-                # convention is retained here.  Although Lambda is adjustable only in units
-                # of fsw-min in the program settings (range from 6500 to 8300 with default
-                # 7500), it will convert to the proper value in Pascals-min in this
-                # subroutine regardless of which diving pressure units are being used in
-                # the main program - feet of seawater (fsw) or meters of seawater (msw).
-                # The allowable gradient is computed using the quadratic formula (refer to
-                # separate write-up posted on the Deco List web site).
-
-                parameter_lambda_pascals = (self.settings_values.Crit_Volume_Parameter_Lambda / 33.0) * ATM
-
-                for i in COMPARTMENT_RANGE:
-
-                    phase_volume_time = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
-
-                    # Helium Calculations
-                    adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-                    initial_allowable_grad_he_pa = (self.Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                    B = initial_allowable_grad_he_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
-
-                    C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_he_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
-
-                    new_allowable_grad_he_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
-
-                    self.Allowable_Gradient_He[i] = (new_allowable_grad_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-
-                    # Nitrogen Calculations
-                    adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                    initial_allowable_grad_n2_pa = (self.Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-
-                    B = initial_allowable_grad_n2_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
-
-                    C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_n2_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
-
-                    new_allowable_grad_n2_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
-
-                    self.Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-
-                # END critical_volume(self.Deco_Phase_Volume_Time)
-
-                self.Deco_Phase_Volume_Time = 0.0
-                self.Run_Time = self.Run_Time_Start_of_Deco_Zone
-                self.Starting_Depth = self.Depth_Start_of_Deco_Zone
-                self.Mix_Number = self.Mix_Change[0]
-                self.Rate = self.Rate_Change[0]
-                self.Step_Size = self.Step_Size_Change[0]
-                for i in COMPARTMENT_RANGE:
-                    self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
-                    self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
-                    self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
-                continue
-            break
-        # END critical_volume_loop
-
-    def main(self):
-        """
-        Purpose:
-        Main decompression loop. Checks that validates the input file, initializes the data
-        and loops over the dives.
-
-        Side Effects: Sets
-
-        `self.Max_Actual_Gradient`,
-        `self.Max_Crushing_Pressure_He`,
-        `self.Max_Crushing_Pressure_N2`,
-        `self.Run_Time`,
-        `self.Segment_Number`
-
-        or
-
-        Raises an InputFileException
-
-        Returns: None
-        """
-        # pycallgraph.start_trace()
-
-        # Purpose: Check the the data loaded from the input file is valid
-
-        # Side Effects:
-
-        # Raises InputFileException, AltitudeException, ValueError
-
-        if self.settings_values.Regeneration_Time_Constant <= 0:
-            raise InputFileException("Regeneration_Time_Constant must be greater than 0")
-
-        if self.settings_values.Units == UnitsSW.FSW and self.altitude_values.Altitude_of_Dive > 30000.0:
-            raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
-
-        if self.settings_values.Units == UnitsSW.MSW and self.altitude_values.Altitude_of_Dive > 9144.0:
-            raise AltitudeException("ERROR! ALTITUDE OF DIVE HIGHER THAN MOUNT EVEREST")
-
-        # nitrogen
-        if self.settings_values.Critical_Radius_N2_Microns < 0.2 or self.settings_values.Critical_Radius_N2_Microns > 1.35:
-            raise ValueError("Bad Critical Radius N2 Microns: Critical_Radius_N2_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_N2_Microns)
-
-        # helium
-        if self.settings_values.Critical_Radius_He_Microns < 0.2 or self.settings_values.Critical_Radius_He_Microns > 1.35:
-            raise ValueError("Bad Critical_Radius_He_Microns: Critical_Radius_He_Microns = %f, must be between '0.2' and '1.35'" % self.settings_values.Critical_Radius_He_Microns)
-
-        self.initialize_data()
+        # END initialize_data
 
         # START OF REPETITIVE DIVE LOOP
         # This is the largest loop in the main program and operates between Lines
@@ -1993,14 +912,6 @@ class DiveState(object):
 
             # Purpose: Checks the given gas mix fractions add up to 1.0, and adds them
             # to the object
-
-            # Side Effects: Sets
-            # `self.Fraction_Helium`,
-            # `self.Fraction_Nitrogen`
-
-            # or
-
-            # Raises an InputFileException
 
             num_gas_mixes = dive.num_gas_mixes
             fraction_oxygen = [0.0] * num_gas_mixes
@@ -2023,8 +934,911 @@ class DiveState(object):
                 self.output_object.add_gasmix(fraction_oxygen[i], self.Fraction_Nitrogen[i], self.Fraction_Helium[i])
 
             # END set_gas_mixes
-            self.profile_code_loop(dive)
-            self.decompression_loop(dive)
+            # START profile_code_loop
+
+            # Purpose:
+            # PROCESS DIVE AS A SERIES OF ASCENT/DESCENT AND CONSTANT DEPTH
+            # SEGMENTS. THIS ALLOWS FOR MULTI-LEVEL DIVES AND UNUSUAL PROFILES. UPDATE
+            # GAS LOADINGS FOR EACH SEGMENT.  IF IT IS A DESCENT SEGMENT, CALC CRUSHING
+            # PRESSURE ON CRITICAL RADII IN EACH COMPARTMENT.
+            # "Instantaneous" descents are not used in the VPM.  All ascent/descent
+            # segments must have a realistic rate of ascent/descent.  Unlike Haldanian
+            # models, the VPM is actually more conservative when the descent rate is
+            # slower because the effective crushing pressure is reduced.  Also, a
+            # realistic actual supersaturation gradient must be calculated during
+            # ascents as this affects critical radii adjustments for repetitive dives.
+
+            # Profile codes: 1 = Ascent/Descent, 2 = Constant Depth, 99 = Decompress
+
+            for profile in dive.profile_codes:
+                if profile.profile_code == ProfileCode.Descent:
+                    self.Starting_Depth = profile.starting_depth
+                    self.Ending_Depth = profile.ending_depth
+                    self.Rate = profile.rate
+                    self.Mix_Number = profile.gasmix
+
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
+                    if self.Ending_Depth > self.Starting_Depth:
+                        # START self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
+
+                        # Purpose: Compute the effective "crushing pressure" in each compartment as
+                        # a result of descent segment(s).  The crushing pressure is the gradient
+                        # (difference in pressure) between the outside ambient pressure and the
+                        # gas tension inside a VPM nucleus (bubble seed).  This gradient acts to
+                        # reduce (shrink) the radius smaller than its initial value at the surface.
+                        # This phenomenon has important ramifications because the smaller the radius
+                        # of a VPM nucleus, the greater the allowable supersaturation gradient upon
+                        # ascent.  Gas loading (uptake) during descent, especially in the fast
+                        # compartments, will reduce the magnitude of the crushing pressure.  The
+                        # crushing pressure is not cumulative over a multi-level descent.  It will
+                        # be the maximum value obtained in any one discrete segment of the overall
+                        # descent.  Thus, the program must compute and store the maximum crushing
+                        # pressure for each compartment that was obtained across all segments of
+                        # the descent profile.
+
+                        # The calculation of crushing pressure will be different depending on
+                        # whether or not the gradient is in the VPM permeable range (gas can diffuse
+                        # across skin of VPM nucleus) or the VPM impermeable range (molecules in
+                        # skin of nucleus are squeezed together so tight that gas can no longer
+                        # diffuse in or out of nucleus; the gas becomes trapped and further resists
+                        # the crushing pressure).  The solution for crushing pressure in the VPM
+                        # permeable range is a simple linear equation.  In the VPM impermeable
+                        # range, a cubic equation must be solved using a numerical method.
+
+                        # Separate crushing pressures are tracked for helium and nitrogen because
+                        # they can have different critical radii.  The crushing pressures will be
+                        # the same for helium and nitrogen in the permeable range of the model, but
+                        # they will start to diverge in the impermeable range.  This is due to
+                        # the differences between starting radius, radius at the onset of
+                        # impermeability, and radial compression in the impermeable range.
+
+                        # First, convert the Gradient for Onset of Impermeability from units of
+                        # atmospheres to diving pressure units (either fsw or msw) and to Pascals
+                        # (SI units).  The reason that the Gradient for Onset of Impermeability is
+                        # given in the program settings in units of atmospheres is because that is
+                        # how it was reported in the original research papers by Yount and
+                        # colleagues.
+
+                        gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()  # convert to diving units
+                        gradient_onset_of_imperm_pa = self.settings_values.Gradient_Onset_of_Imperm_Atm * ATM     # convert to Pascals
+
+                        # Assign values of starting and ending ambient pressures for descent segment
+
+                        starting_ambient_pressure = self.Starting_Depth + self.Barometric_Pressure
+                        ending_ambient_pressure = self.Ending_Depth + self.Barometric_Pressure
+
+                        # MAIN LOOP WITH NESTED DECISION TREE
+                        # For each compartment, the program computes the starting and ending
+                        # gas tensions and gradients.  The VPM is different than some dissolved gas
+                        # algorithms, Buhlmann for example, in that it considers the pressure due to
+                        # oxygen, carbon dioxide, and water vapor in each compartment in addition to
+                        # the inert gases helium and nitrogen.  These "other gases" are included in
+                        # the calculation of gas tensions and gradients.
+
+                        for i in COMPARTMENT_RANGE:
+                            starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
+
+                            starting_gradient = starting_ambient_pressure - starting_gas_tension
+
+                            ending_gas_tension = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
+
+                            ending_gradient = ending_ambient_pressure - ending_gas_tension
+
+                            # Compute radius at onset of impermeability for helium and nitrogen
+                            # critical radii
+
+                            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+
+                            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+
+                            # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
+                            # Crushing pressures will be the same for helium and nitrogen
+                            if ending_gradient <= gradient_onset_of_imperm:
+                                crushing_pressure_he = ending_ambient_pressure - ending_gas_tension
+                                crushing_pressure_n2 = ending_ambient_pressure - ending_gas_tension
+
+                            # SECOND BRANCH OF DECISION TREE - IMPERMEABLE RANGE
+                            # Both the ambient pressure and the gas tension at the onset of
+                            # impermeability must be computed in order to properly solve for the ending
+                            # radius and resultant crushing pressure.  The first decision block
+                            # addresses the special case when the starting gradient just happens to be
+                            # equal to the gradient for onset of impermeability (not very likely!).
+
+                            # if ending_gradient > gradient_onset_of_imperm:
+                            else:
+
+                                if starting_gradient == gradient_onset_of_imperm:
+                                    self.Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
+                                    self.Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
+                                # In most cases, a subroutine will be called to find these values using a
+                                # numerical method.
+                                if starting_gradient < gradient_onset_of_imperm:
+                                    # START onset_of_impermeability
+
+                                    # Purpose:  This subroutine uses the Bisection Method to find the ambient
+                                    # pressure and gas tension at the onset of impermeability for a given
+                                    # compartment.  Source:  "Numerical Recipes in Fortran 77",
+                                    # Cambridge University Press, 1992.
+
+                                    # First convert the Gradient for Onset of Impermeability to the diving
+                                    # pressure units that are being used
+
+                                    gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()
+
+                                    # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
+                                    # In this case, we are solving for time - the time when the ambient pressure
+                                    # minus the gas tension will be equal to the Gradient for Onset of
+                                    # Impermeability.  The low bound for time is set at zero and the high
+                                    # bound is set at the elapsed time (segment time) it took to go from the
+                                    # starting ambient pressure to the ending ambient pressure.  The desired
+                                    # ambient pressure and gas tension at the onset of impermeability will
+                                    # be found somewhere between these endpoints.  The algorithm checks to
+                                    # make sure that the solution lies in between these bounds by first
+                                    # computing the low bound and high bound function values.
+
+                                    initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
+
+                                    initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+                                    helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
+                                    nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                    low_bound = 0.0
+
+                                    high_bound = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
+
+                                    starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
+
+                                    function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
+
+                                    high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
+
+                                    high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
+
+                                    ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
+
+                                    function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
+
+                                    if(function_at_high_bound * function_at_low_bound) >= 0.0:
+                                        raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
+
+                                    # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
+                                    # THE DESIRED ACCURACY IS FOUND
+                                    # Note: the program allows for up to 100 iterations.  Normally an exit will
+                                    # be made from the loop well before that number.  If, for some reason, the
+                                    # program exceeds 100 iterations, there will be a pause to alert the user.
+
+                                    if function_at_low_bound < 0.0:
+                                        time = low_bound
+                                        differential_change = high_bound - low_bound
+                                    else:
+                                        time = high_bound
+                                        differential_change = low_bound - high_bound
+
+                                    for j in range(100):
+                                        last_diff_change = differential_change
+                                        differential_change = last_diff_change * 0.5
+                                        mid_range_time = time + differential_change
+
+                                        mid_range_ambient_pressure = (starting_ambient_pressure + self.Rate * mid_range_time)
+
+                                        mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
+
+                                        mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
+
+                                        gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
+
+                                        function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
+
+                                        if function_at_mid_range <= 0.0:
+                                            time = mid_range_time
+
+                                        # When a solution with the desired accuracy is found, the program breaks
+                                        if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
+                                            break
+
+                                    self.Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
+                                    self.Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
+                                    # END onset_of_impermeability
+
+                                # Next, using the values for ambient pressure and gas tension at the onset
+                                # of impermeability, the equations are set up to process the calculations
+                                # through the radius root finder subroutine.  This subprogram will find the
+                                # root (solution) to the cubic equation using a numerical method.  In order
+                                # to do this efficiently, the equations are placed in the form
+                                # Ar^3 - Br^2 - C = 0, where r is the ending radius after impermeable
+                                # compression.  The coefficients A, B, and C for helium and nitrogen are
+                                # computed and passed to the subroutine as arguments.  The high and low
+                                # bounds to be used by the numerical method of the subroutine are also
+                                # computed (see separate page posted on Deco List ftp site entitled
+                                # "VPM: Solving for radius in the impermeable regime").  The subprogram
+                                # will return the value of the ending radius and then the crushing
+                                # pressures for helium and nitrogen can be calculated.
+                                ending_ambient_pressure_pa = (ending_ambient_pressure / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                                amb_press_onset_of_imperm_pa = (self.Amb_Pressure_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                                gas_tension_onset_of_imperm_pa = (self.Gas_Tension_Onset_of_Imperm[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                                crushing_pressure_he = self._crushing_pressure_helper(radius_onset_of_imperm_he, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
+
+                                crushing_pressure_n2 = self._crushing_pressure_helper(radius_onset_of_imperm_n2, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
+
+                            # UPDATE VALUES OF MAX CRUSHING PRESSURE IN Object ARRAYS
+                            self.Max_Crushing_Pressure_He[i] = max(self.Max_Crushing_Pressure_He[i], crushing_pressure_he)
+                            self.Max_Crushing_Pressure_N2[i] = max(self.Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
+
+                        # END self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
+
+                    # the error seems unnecessary
+                    if self.Ending_Depth > self.Starting_Depth:
+                        word = 'Descent'
+                    elif self.Starting_Depth > self.Ending_Depth:
+                        word = 'Ascent '
+                    else:
+                        word = 'ERROR'
+
+                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, self.Rate)
+
+                elif profile.profile_code == ProfileCode.Constant:
+                    self.Depth = profile.depth
+                    self.Run_Time_End_of_Segment = profile.run_time_at_end_of_segment
+                    self.Mix_Number = profile.gasmix
+
+                    self.gas_loadings_constant_depth(self.Depth, self.Run_Time_End_of_Segment)
+
+                    self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Depth)
+                else:
+                    break
+
+                # END profile_code_loop
+
+            # START decompression_loop
+            # Purpose:
+            # BEGIN PROCESS OF ASCENT AND DECOMPRESSION
+            # First, calculate the regeneration of critical radii that takes place over
+            # the dive time.  The regeneration time constant has a time scale of weeks
+            # so this will have very little impact on dives of normal length, but will
+            # have major impact for saturation dives.
+
+            # START nuclear_regeneration
+
+            # Purpose: This subprogram calculates the regeneration of VPM critical
+            # radii that takes place over the dive time.  The regeneration time constant
+            # has a time scale of weeks so this will have very little impact on dives of
+            # normal length, but will have a major impact for saturation dives.
+
+            # First convert the maximum crushing pressure obtained for each compartment
+            # to Pascals.  Next, compute the ending radius for helium and nitrogen
+            # critical nuclei in each compartment.
+            for i in COMPARTMENT_RANGE:
+                crushing_pressure_pascals_he = (self.Max_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                crushing_pressure_pascals_n2 = (self.Max_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_He[i])
+
+                ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) + 1.0 / self.Adjusted_Critical_Radius_N2[i])
+                # A "regenerated" radius for each nucleus is now calculated based on the
+                # regeneration time constant.  This means that after application of
+                # crushing pressure and reduction in radius, a nucleus will slowly grow
+                # back to its original initial radius over a period of time.  This
+                # phenomenon is probabilistic in nature and depends on absolute temperature.
+                # It is independent of crushing pressure.
+                self.Regenerated_Radius_He[i] = self.Adjusted_Critical_Radius_He[i] + (ending_radius_he - self.Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+
+                self.Regenerated_Radius_N2[i] = self.Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - self.Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / self.settings_values.Regeneration_Time_Constant)
+
+                # In order to preserve reference back to the initial critical radii after
+                # regeneration, an "adjusted crushing pressure" for the nuclei in each
+                # compartment must be computed.  In other words, this is the value of
+                # crushing pressure that would have reduced the original nucleus to the
+                # to the present radius had regeneration not taken place.  The ratio
+                # for adjusting crushing pressure is obtained from algebraic manipulation
+                # of the standard VPM equations.  The adjusted crushing pressure, in lieu
+                # of the original crushing pressure, is then applied in the VPM Critical
+                # Volume Algorithm and the VPM Repetitive Algorithm.
+
+                crush_pressure_adjust_ratio_he = (ending_radius_he * (self.Adjusted_Critical_Radius_He[i] - self.Regenerated_Radius_He[i])) / (self.Regenerated_Radius_He[i] * (self.Adjusted_Critical_Radius_He[i] - ending_radius_he))
+
+                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (self.Adjusted_Critical_Radius_N2[i] - self.Regenerated_Radius_N2[i])) / (self.Regenerated_Radius_N2[i] * (self.Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
+
+                adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
+                adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
+
+                self.Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+                self.Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+
+            # END nuclear_regeneration
+
+            #   CALCULATE INITIAL ALLOWABLE GRADIENTS FOR ASCENT
+            #   This is based on the maximum effective crushing pressure on critical radii
+            #   in each compartment achieved during the dive profile.
+            # START self.calc_initial_allowable_gradient()
+
+            # Purpose: This subprogram calculates the initial allowable gradients for
+            # helium and nitrogen in each compartment.  These are the gradients that
+            # will be used to set the deco ceiling on the first pass through the deco
+            # loop.  If the Critical Volume Algorithm is set to False, then these
+            # gradients will determine the final deco schedule.  Otherwise, if the
+            # Critical Volume Algorithm is set to True, these gradients will be further
+            # "relaxed" by the Critical Volume Algorithm subroutine.  The initial
+            # allowable gradients are referred to as "PssMin" in the papers by Yount
+            # and colleagues, i.e., the minimum supersaturation pressure gradients
+            # that will probe bubble formation in the VPM nuclei that started with the
+            # designated minimum initial radius (critical radius).
+
+            # The initial allowable gradients are computed directly from the
+            # "regenerated" radii after the Nuclear Regeneration subroutine.  These
+            # gradients are tracked separately for helium and nitrogen.
+
+            # The initial allowable gradients are computed in Pascals and then converted
+            # to the diving pressure units.  Two different sets of arrays are used to
+            # save the calculations - Initial Allowable Gradients and Allowable
+            # Gradients.  The Allowable Gradients are assigned the values from Initial
+            # Allowable Gradients however the Allowable Gradients can be changed later
+            # by the Critical Volume subroutine.  The values for the Initial Allowable
+            # Gradients are saved in a global array for later use by both the Critical
+            # Volume subroutine and the VPM Repetitive Algorithm subroutine.
+
+            for i in COMPARTMENT_RANGE:
+                initial_allowable_grad_n2_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
+
+                initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
+
+                self.Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * self.settings_values.Units.toUnitsFactor()
+                self.Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * self.settings_values.Units.toUnitsFactor()
+
+                self.Allowable_Gradient_He[i] = self.Initial_Allowable_Gradient_He[i]
+                self.Allowable_Gradient_N2[i] = self.Initial_Allowable_Gradient_N2[i]
+
+            # END self.calc_initial_allowable_gradient()
+
+            #     SAVE VARIABLES AT START OF ASCENT (END OF BOTTOM TIME) SINCE THESE WILL
+            #     BE USED LATER TO COMPUTE THE FINAL ASCENT PROFILE THAT IS WRITTEN TO THE
+            #     OUTPUT FILE.
+            #     The VPM uses an iterative process to compute decompression schedules so
+            #     there will be more than one pass through the decompression loop.
+
+            for i in COMPARTMENT_RANGE:
+                self.He_Pressure_Start_of_Ascent[i] = self.Helium_Pressure[i]
+                self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
+
+            self.Run_Time_Start_of_Ascent = self.Run_Time
+            self.Segment_Number_Start_of_Ascent = self.Segment_Number
+
+            #     INPUT PARAMETERS TO BE USED FOR STAGED DECOMPRESSION AND SAVE IN ARRAYS.
+            #     ASSIGN INITIAL PARAMETERS TO BE USED AT START OF ASCENT
+            #     The user has the ability to change mix, ascent rate, and step size in any
+            #     combination at any depth during the ascent.
+
+            for profile in dive.profile_codes:
+                if profile.profile_code == ProfileCode.Ascent:
+                    self.Number_of_Changes = profile.number_of_ascent_parameter_changes
+                    self.Depth_Change = [0.0] * self.Number_of_Changes
+                    self.Mix_Change = [0.0] * self.Number_of_Changes
+                    self.Rate_Change = [0.0] * self.Number_of_Changes
+                    self.Step_Size_Change = [0.0] * self.Number_of_Changes
+
+                    for i, ascents in enumerate(profile.ascent_summary):
+                        self.Depth_Change[i] = ascents.starting_depth
+                        self.Mix_Change[i] = ascents.gasmix
+                        self.Rate_Change[i] = ascents.rate
+                        self.Step_Size_Change[i] = ascents.step_size
+
+                    self.Starting_Depth = self.Depth_Change[0]
+                    self.Mix_Number = self.Mix_Change[0]
+                    self.Rate = self.Rate_Change[0]
+                    self.Step_Size = self.Step_Size_Change[0]
+
+            # CALCULATE THE DEPTH WHERE THE DECOMPRESSION ZONE BEGINS FOR THIS PROFILE
+            # BASED ON THE INITIAL ASCENT PARAMETERS AND WRITE THE DEEPEST POSSIBLE
+            # DECOMPRESSION STOP DEPTH TO THE OUTPUT FILE
+            # Knowing where the decompression zone starts is very important.  Below
+            # that depth there is no possibility for bubble formation because there
+            # will be no supersaturation gradients.  Deco stops should never start
+            # below the deco zone.  The deepest possible stop deco stop depth is
+            # defined as the next "standard" stop depth above the point where the
+            # leading compartment enters the deco zone.  Thus, the program will not
+            # base this calculation on step sizes larger than 10 fsw or 3 msw.  The
+            # deepest possible stop depth is not used in the program, per se, rather
+            # it is information to tell the diver where to start putting on the brakes
+            # during ascent.  This should be prominently displayed by any deco program.
+
+            self.calc_start_of_deco_zone(self.Starting_Depth, self.Rate)
+
+            if self.settings_values.Units == UnitsSW.FSW:
+                if self.Step_Size < 10.0:
+                    rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
+                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                else:
+                    rounding_op = (self.Depth_Start_of_Deco_Zone / 10.0) - 0.5
+                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * 10.0
+
+            else:
+                if self.Step_Size < 3.0:
+                    rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
+                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                else:
+                    rounding_op = (self.Depth_Start_of_Deco_Zone / 3.0) - 0.5
+                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * 3.0
+
+            #     TEMPORARILY ASCEND PROFILE TO THE START OF THE DECOMPRESSION ZONE, SAVE
+            #     VARIABLES AT THIS POINT, AND INITIALIZE VARIABLES FOR CRITICAL VOLUME LOOP
+            #     The iterative process of the VPM Critical Volume Algorithm will operate
+            #     only in the decompression zone since it deals with excess gas volume
+            #     released as a result of supersaturation gradients (not possible below the
+            #     decompression zone).
+
+            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Depth_Start_of_Deco_Zone, self.Rate)
+            self.Run_Time_Start_of_Deco_Zone = self.Run_Time
+            self.Deco_Phase_Volume_Time = 0.0
+            self.Last_Run_Time = 0.0
+
+            for i in COMPARTMENT_RANGE:
+                self.Last_Phase_Volume_Time[i] = 0.0
+                self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
+                self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
+                self.Max_Actual_Gradient[i] = 0.0
+
+            # START critical_volume_loop
+            # Purpose:
+            # If the Critical Volume
+            # Algorithm is toggled False in the program settings, there will only be
+            # one pass through this loop.  Otherwise, there will be two or more passes
+            # through this loop until the deco schedule is "converged" - that is when a
+            # comparison between the phase volume time of the present iteration and the
+            # last iteration is less than or equal to one minute.  This implies that
+            # the volume of released gas in the most recent iteration differs from the
+            # "critical" volume limit by an acceptably small amount.  The critical
+            # volume limit is set by the Critical Volume Parameter Lambda in the program
+            # settings (default setting is 7500 fsw-min with adjustability range from
+            # from 6500 to 8300 fsw-min according to Bruce Wienke).
+
+            Schedule_Converged = False
+
+            while True:
+                # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
+                # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
+                # SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
+
+                # START CALC_ASCENT_CEILING
+
+                # Purpose: This subprogram calculates the ascent ceiling (the safe ascent
+                # depth) in each compartment, based on the allowable gradients, and then
+                # finds the deepest ascent ceiling across all compartments.
+
+                compartment_ascent_ceiling = [0.0] * ARRAY_LENGTH
+
+                # Since there are two sets of allowable gradients being tracked, one for
+                # helium and one for nitrogen, a "weighted allowable gradient" must be
+                # computed each time based on the proportions of helium and nitrogen in
+                # each compartment.  This proportioning follows the methodology of
+                # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
+                # such as after extended periods of oxygen breathing, then the minimum value
+                # across both gases will be used.  It is important to note that if a
+                # compartment is empty of helium and nitrogen, then the weighted allowable
+                # gradient formula cannot be used since it will result in division by zero.
+
+                for i in COMPARTMENT_RANGE:
+                    gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
+
+                    if gas_loading > 0.0:
+                        weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * self.Helium_Pressure[i] + self.Allowable_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
+                        tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
+
+                    else:
+                        weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
+                        tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
+
+                    #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
+                    #     the vacuum of outer space!
+                    if tolerated_ambient_pressure < 0.0:
+                        tolerated_ambient_pressure = 0.0
+
+                    #     The Ascent Ceiling Depth is computed in a loop after all of the individual
+                    #     compartment ascent ceilings have been calculated.  It is important that
+                    #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
+                    #     be extracted from the compartment values and not be compared against some
+                    #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
+                    #     compared against zero, this could cause a program lockup because sometimes
+                    #     the Ascent Ceiling Depth needs to be negative (but not less than zero
+                    #     absolute ambient pressure) in order to decompress to the last stop at zero
+                    #     depth.
+
+                    compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
+
+                self.Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
+
+                # END CALC_ASCENT_CEILING
+
+                if self.Ascent_Ceiling_Depth <= 0.0:
+                    self.Deco_Stop_Depth = 0.0
+                else:
+                    rounding_operation2 = (self.Ascent_Ceiling_Depth / self.Step_Size) + 0.5
+                    self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
+
+                if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                    raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
+
+                # PERFORM A SEPARATE "PROJECTED ASCENT" OUTSIDE OF THE MAIN PROGRAM TO MAKE
+                # SURE THAT AN INCREASE IN GAS LOADINGS DURING ASCENT TO THE FIRST STOP WILL
+                # NOT CAUSE A VIOLATION OF THE DECO CEILING.  IF SO, ADJUST THE FIRST STOP
+                # DEEPER BASED ON STEP SIZE UNTIL A SAFE ASCENT CAN BE MADE.
+                # Note: this situation is a possibility when ascending from extremely deep
+                # dives or due to an unusual gas mix selection.
+                # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
+                # DECO ZONE.
+
+                # START self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
+
+                # Purpose: This subprogram performs a simulated ascent outside of the main
+                # program to ensure that a deco ceiling will not be violated due to unusual
+                # gas loading during ascent (on-gassing).  If the deco ceiling is violated,
+                # the stop depth will be adjusted deeper by the step size until a safe
+                # ascent can be made.
+
+                new_ambient_pressure = self.Deco_Stop_Depth + self.Barometric_Pressure
+                starting_ambient_pressure = self.Depth_Start_of_Deco_Zone + self.Barometric_Pressure
+
+                initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
+
+                initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+                helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
+                nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+                temp_gas_loading = [0.0] * ARRAY_LENGTH
+                allowable_gas_loading = [0.0] * ARRAY_LENGTH
+                initial_helium_pressure = [0.0] * ARRAY_LENGTH
+                initial_nitrogen_pressure = [0.0] * ARRAY_LENGTH
+
+                for i in COMPARTMENT_RANGE:
+                    initial_helium_pressure[i] = self.Helium_Pressure[i]
+                    initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
+
+                while True:
+                    ending_ambient_pressure = new_ambient_pressure
+
+                    segment_time = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
+
+                    for i in COMPARTMENT_RANGE:
+                        temp_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, self.Helium_Time_Constant[i], initial_helium_pressure[i])
+
+                        temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
+
+                        temp_gas_loading[i] = temp_helium_pressure + temp_nitrogen_pressure
+
+                        if temp_gas_loading[i] > 0.0:
+                            weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * temp_helium_pressure + self.Allowable_Gradient_N2[i] * temp_nitrogen_pressure) / temp_gas_loading[i]
+                        else:
+                            weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
+
+                        allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - self.settings_values.Constant_Pressure_Other_Gases
+
+                    end_sub = True # TODO Build this condition into the while
+                    for j in COMPARTMENT_RANGE:
+                        if temp_gas_loading[j] > allowable_gas_loading[j]:
+                            new_ambient_pressure = ending_ambient_pressure + self.Step_Size
+                            self.Deco_Stop_Depth = self.Deco_Stop_Depth + self.Step_Size
+                            end_sub = False
+
+                            break
+
+                    if end_sub:
+                        break
+                # END self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
+
+                if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                    raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
+
+                #     HANDLE THE SPECIAL CASE WHEN NO DECO STOPS ARE REQUIRED - ASCENT CAN BE
+                #     MADE DIRECTLY TO THE SURFACE
+                #     Write ascent data to output file and exit the Critical Volume Loop.
+
+                if self.Deco_Stop_Depth == 0.0:
+                    for i in COMPARTMENT_RANGE:
+                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
+                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+
+                    self.Run_Time = self.Run_Time_Start_of_Ascent
+                    self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                    self.Starting_Depth = self.Depth_Change[0]
+                    self.Ending_Depth = 0.0
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
+
+                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                    break
+
+                # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
+                # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
+
+                self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+                self.First_Stop_Depth = self.Deco_Stop_Depth
+
+                # START deco_stop_loop_block_within_critical_volume_loop
+
+                # Purpose:
+                # DECO STOP LOOP BLOCK WITHIN CRITICAL VOLUME LOOP
+                # This loop computes a decompression schedule to the surface during each
+                # iteration of the critical volume loop.  No output is written from this
+                # loop, rather it computes a schedule from which the in-water portion of the
+                # total phase volume time (Deco_Phase_Volume_Time) can be extracted.  Also,
+                # the gas loadings computed at the end of this loop are used in the subroutine
+                # which computes the out-of-water portion of the total phase volume time
+                # (Surface_Phase_Volume_Time) for that schedule.
+
+                # Note that exit is made from the loop after last ascent is made to a deco
+                # stop depth that is less than or equal to zero.  A final deco stop less
+                # than zero can happen when the user makes an odd step size change during
+                # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
+
+                while True:
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+
+                    if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
+                        break
+
+                    if self.Number_of_Changes > 1:
+                        for i in range(1, self.Number_of_Changes):
+                            if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                                self.Mix_Number = self.Mix_Change[i]
+                                self.Rate = self.Rate_Change[i]
+                                self.Step_Size = self.Step_Size_Change[i]
+
+                    self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+
+                    self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+
+                    self.Starting_Depth = self.Deco_Stop_Depth
+                    self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                    self.Deco_Stop_Depth = self.Next_Stop
+                    self.Last_Run_Time = self.Run_Time
+
+                # END deco_stop_loop_block_within_critical_volume_loop
+
+                # COMPUTE TOTAL PHASE VOLUME TIME AND MAKE CRITICAL VOLUME COMPARISON
+                # The deco phase volume time is computed from the run time.  The surface
+                # phase volume time is computed in a subroutine based on the surfacing gas
+                # loadings from previous deco loop block.  Next the total phase volume time
+                # (in-water + surface) for each compartment is compared against the previous
+                # total phase volume time.  The schedule is converged when the difference is
+                # less than or equal to 1 minute in any one of the ARRAY_LENGTH compartments.
+
+                # Note:  the "phase volume time" is somewhat of a mathematical concept.
+                # It is the time divided out of a total integration of supersaturation
+                # gradient x time (in-water and surface).  This integration is multiplied
+                # by the excess bubble number to represent the amount of free-gas released
+                # as a result of allowing a certain number of excess bubbles to form.
+                self.Deco_Phase_Volume_Time = self.Run_Time - self.Run_Time_Start_of_Deco_Zone
+
+                # START calc_surface_phase_volume_time
+
+                # Purpose: This subprogram computes the surface portion of the total phase
+                # volume time.  This is the time factored out of the integration of
+                # supersaturation gradient x time over the surface interval.  The VPM
+                # considers the gradients that allow bubbles to form or to drive bubble
+                # growth both in the water and on the surface after the dive.
+
+                # This subroutine is a new development to the VPM algorithm in that it
+                # computes the time course of supersaturation gradients on the surface
+                # when both helium and nitrogen are present.  Refer to separate write-up
+                # for a more detailed explanation of this algorithm.
+
+                surface_inspired_n2_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+                for i in COMPARTMENT_RANGE:
+                    if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
+
+                        self.Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+
+                    elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
+                        decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
+
+                        integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
+
+                        self.Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
+
+                    else:
+                        self.Surface_Phase_Volume_Time[i] = 0.0
+
+
+                # END calc_surface_phase_volume_time
+
+                for i in COMPARTMENT_RANGE:
+                    self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                    self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
+                    if self.Critical_Volume_Comparison <= 1.0:
+                        Schedule_Converged = True
+
+                # There are two options here.  If the Critical Volume Algorithm setting is
+                # True and the schedule is converged, or the Critical Volume Algorithm
+                # setting was False in the first place, the program will re-assign variables
+                # to their values at the start of ascent (end of bottom time) and process
+                # a complete decompression schedule once again using all the same ascent
+                # parameters and first stop depth.  This decompression schedule will match
+                # the last iteration of the Critical Volume Loop and the program will write
+                # the final deco schedule to the output file.
+
+                # Note: if the Critical Volume Algorithm setting was False, the final deco
+                # schedule will be based on "Initial Allowable Supersaturation Gradients."
+                # If it was True, the final schedule will be based on "Adjusted Allowable
+                # Supersaturation Gradients" (gradients that are "relaxed" as a result of
+                # the Critical Volume Algorithm).
+
+                # If the Critical Volume Algorithm setting is True and the schedule is not
+                # converged, the program will re-assign variables to their values at the
+                # start of the deco zone and process another trial decompression schedule.
+
+                if Schedule_Converged or not self.settings_values.Critical_Volume_Algorithm:
+                    # START critical_volume_decision_tree
+
+                    for i in COMPARTMENT_RANGE:
+                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
+                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
+
+                    self.Run_Time = self.Run_Time_Start_of_Ascent
+                    self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                    self.Starting_Depth = self.Depth_Change[0]
+                    self.Mix_Number = self.Mix_Change[0]
+                    self.Rate = self.Rate_Change[0]
+                    self.Step_Size = self.Step_Size_Change[0]
+                    self.Deco_Stop_Depth = self.First_Stop_Depth
+                    self.Last_Run_Time = 0.0
+
+                    # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
+
+                    while True:
+                        self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+                        # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
+                        # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
+                        # If there is a repetitive dive, this will be used later in the VPM
+                        # Repetitive Algorithm to adjust the values for critical radii.
+
+
+
+                        # START self.calc_max_actual_gradient(self.Deco_Stop_Depth)
+
+                        # Purpose: This subprogram calculates the actual supersaturation gradient
+                        # obtained in each compartment as a result of the ascent profile during
+                        # decompression.  Similar to the concept with crushing pressure, the
+                        # supersaturation gradients are not cumulative over a multi-level, staged
+                        # ascent.  Rather, it will be the maximum value obtained in any one discrete
+                        # step of the overall ascent.  Thus, the program must compute and store the
+                        # maximum actual gradient for each compartment that was obtained across all
+                        # steps of the ascent profile.  This subroutine is invoked on the last pass
+                        # through the deco stop loop block when the final deco schedule is being
+                        # generated.
+
+                        # The max actual gradients are later used by the VPM Repetitive Algorithm to
+                        # determine if adjustments to the critical radii are required.  If the max
+                        # actual gradient did not exceed the initial allowable gradient, then no
+                        # adjustment will be made.  However, if the max actual gradient did exceed
+                        # the initial allowable gradient, such as permitted by the Critical Volume
+                        # Algorithm, then the critical radius will be adjusted (made larger) on the
+                        # repetitive dive to compensate for the bubbling that was allowed on the
+                        # previous dive.  The use of the max actual gradients is intended to prevent
+                        # the repetitive algorithm from being overly conservative.
+
+                        # Note: negative supersaturation gradients are meaningless for this
+                        # application, so the values must be equal to or greater than zero.
+
+                        for i in COMPARTMENT_RANGE:
+                            compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases) - (self.Deco_Stop_Depth + self.Barometric_Pressure)
+                            if compartment_gradient <= 0.0:
+                                compartment_gradient = 0.0
+
+                            self.Max_Actual_Gradient[i] = max(self.Max_Actual_Gradient[i], compartment_gradient)
+
+                        # END self.calc_max_actual_gradient(self.Deco_Stop_Depth)
+
+
+
+
+                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                        if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
+                            break
+
+                        if self.Number_of_Changes > 1:
+                            for i in range(1, self.Number_of_Changes):
+                                if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                                    self.Mix_Number = self.Mix_Change[i]
+                                    self.Rate = self.Rate_Change[i]
+                                    self.Step_Size = self.Step_Size_Change[i]
+
+                        self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+                        self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+                        # This next bit just rounds up the stop time at the first stop to be in
+                        # whole increments of the minimum stop time (to make for a nice deco table).
+
+                        if self.Last_Run_Time == 0.0:
+                            self.Stop_Time = round((self.Segment_Time / self.settings_values.Minimum_Deco_Stop_Time) + 0.5) * self.settings_values.Minimum_Deco_Stop_Time
+                        else:
+                            self.Stop_Time = self.Run_Time - self.Last_Run_Time
+
+                        # DURING FINAL DECOMPRESSION SCHEDULE, IF MINIMUM STOP TIME PARAMETER IS A
+                        # WHOLE NUMBER (i.e. 1 minute) THEN WRITE DECO SCHEDULE USING INTEGER
+                        # NUMBERS (looks nicer).  OTHERWISE, USE DECIMAL NUMBERS.
+                        # Note: per the request of a noted exploration diver(!), program now allows
+                        # a minimum stop time of less than one minute so that total ascent time can
+                        # be minimized on very long dives.  In fact, with step size set at 1 fsw or
+                        # 0.2 msw and minimum stop time set at 0.1 minute (6 seconds), a near
+                        # continuous decompression schedule can be computed.
+
+                        if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(self.Stop_Time))
+                        else:
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
+
+                        self.Starting_Depth = self.Deco_Stop_Depth
+                        self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                        self.Deco_Stop_Depth = self.Next_Stop
+                        self.Last_Run_Time = self.Run_Time
+
+                    # END critical_volume_decision_tree
+
+                else:
+                    # START critical_volume
+
+                    # Purpose: This subprogram applies the VPM Critical Volume Algorithm.  This
+                    # algorithm will compute "relaxed" gradients for helium and nitrogen based
+                    # on the setting of the Critical Volume Parameter Lambda.
+
+                    # Note:  Since the Critical Volume Parameter Lambda was defined in units of
+                    # fsw-min in the original papers by Yount and colleagues, the same
+                    # convention is retained here.  Although Lambda is adjustable only in units
+                    # of fsw-min in the program settings (range from 6500 to 8300 with default
+                    # 7500), it will convert to the proper value in Pascals-min in this
+                    # subroutine regardless of which diving pressure units are being used in
+                    # the main program - feet of seawater (fsw) or meters of seawater (msw).
+                    # The allowable gradient is computed using the quadratic formula (refer to
+                    # separate write-up posted on the Deco List web site).
+
+                    parameter_lambda_pascals = (self.settings_values.Crit_Volume_Parameter_Lambda / 33.0) * ATM
+
+                    for i in COMPARTMENT_RANGE:
+
+                        phase_volume_time = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+
+                        # Helium Calculations
+                        adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                        initial_allowable_grad_he_pa = (self.Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                        B = initial_allowable_grad_he_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
+
+                        C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_he_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
+
+                        new_allowable_grad_he_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
+
+                        self.Allowable_Gradient_He[i] = (new_allowable_grad_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+
+                        # Nitrogen Calculations
+                        adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                        initial_allowable_grad_n2_pa = (self.Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+
+                        B = initial_allowable_grad_n2_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
+
+                        C = (self.settings_values.Surface_Tension_Gamma * (self.settings_values.Surface_Tension_Gamma * (parameter_lambda_pascals * adj_crush_pressure_n2_pascals))) / (self.settings_values.Skin_Compression_GammaC * (self.settings_values.Skin_Compression_GammaC * phase_volume_time))
+
+                        new_allowable_grad_n2_pascals = (B + sqrt(B ** 2 - 4.0 * C)) / 2.0
+
+                        self.Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+
+                    # END critical_volume
+
+                    self.Deco_Phase_Volume_Time = 0.0
+                    self.Run_Time = self.Run_Time_Start_of_Deco_Zone
+                    self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+                    self.Mix_Number = self.Mix_Change[0]
+                    self.Rate = self.Rate_Change[0]
+                    self.Step_Size = self.Step_Size_Change[0]
+                    for i in COMPARTMENT_RANGE:
+                        self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
+                        self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
+                        self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
+                    continue
+                break
+            # END critical_volume_loop
+            # END decompression_loop
 
 
             # IF THERE IS A REPETITIVE DIVE, COMPUTE GAS LOADINGS (OFF-GASSING) DURING
@@ -2036,10 +1850,6 @@ class DiveState(object):
 
                 # Purpose: This subprogram calculates the gas loading (off-gassing) during
                 # a surface interval.
-
-                # Side Effects: Sets
-                # `self.Helium_Pressure`,
-                # `self.Nitrogen_Pressure`
 
                 inspired_helium_pressure = 0.0
                 inspired_nitrogen_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
@@ -2058,10 +1868,6 @@ class DiveState(object):
 
                 # Purpose: This subprogram implements the VPM Repetitive Algorithm that was
                 # envisioned by Professor David E. Yount only months before his passing.
-
-                # Side Effects: Sets
-                # `self.Adjusted_Critical_Radius_He`,
-                # `self.Adjusted_Critical_Radius_N2`
 
                 for i in COMPARTMENT_RANGE:
                     max_actual_gradient_pascals = (self.Max_Actual_Gradient[i] / self.settings_values.Units.toUnitsFactor()) * ATM
