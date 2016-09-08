@@ -247,17 +247,12 @@ class DiveState(object):
         self.Segment_Number_Start_of_Ascent = 0
 
         # floats
-        self.Deco_Stop_Depth = 0.0
-        self.Step_Size = 0.0
-        self.Depth_Start_of_Deco_Zone = 0.0
         self.Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
         self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
 
         # Global Arrays
         self.Mix_Change = []
         self.Depth_Change = []
-        rate_Change = []
-        self.Step_Size_Change = []
         self.He_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
         self.N2_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
         self.He_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
@@ -400,146 +395,6 @@ class DiveState(object):
         return (crushing_pressure_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
 
 
-
-    def gas_loadings_constant_depth(self, depth, run_time_end_of_segment):
-        """
-        Purpose: This subprogram applies the Haldane equation to update the
-        gas loadings (partial pressures of helium and nitrogen) in the half-time
-        compartments for a segment at constant depth.
-
-        Side Effects: Sets
-        `self.Ending_Ambient_Pressure`,
-        `self.Helium_Pressure`,
-        `self.Nitrogen_Pressure`
-        `self.Run_Time`,
-        `self.Segment_Number`,
-        `self.Segment_Time`,
-
-        Returns: None
-        """
-
-        self.Segment_Time = run_time_end_of_segment - self.Run_Time
-        self.Run_Time = run_time_end_of_segment
-        self.Segment_Number += 1
-        ambient_pressure = depth + self.Barometric_Pressure
-
-        inspired_helium_pressure = (ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-        inspired_nitrogen_pressure = (ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-        self.Ending_Ambient_Pressure = ambient_pressure
-
-        for i in COMPARTMENT_RANGE:
-            temp_helium_pressure = self.Helium_Pressure[i]
-            temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-            self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], self.Segment_Time)
-
-            self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
-
-    def calc_start_of_deco_zone(self, starting_depth, rate):
-        """
-        Purpose: This subroutine uses the Bisection Method to find the depth at
-        which the leading compartment just enters the decompression zone.
-        Source:  "Numerical Recipes in Fortran 77", Cambridge University Press,
-        1992.
-
-        Side Effects: Sets
-        `self.Depth_Start_of_Deco_Zone`
-
-        or
-
-        Raises a RootException
-
-        Returns: None
-        """
-
-        # First initialize some variables
-        self.Depth_Start_of_Deco_Zone = 0.0
-        starting_ambient_pressure = starting_depth + self.Barometric_Pressure
-
-        initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-        initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-        helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
-        nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-        # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
-        # AND CHECK TO MAKE SURE THAT THE ROOT WILL BE WITHIN BOUNDS.  PROCESS
-        # EACH COMPARTMENT INDIVIDUALLY AND FIND THE MAXIMUM DEPTH ACROSS ALL
-        # COMPARTMENTS (LEADING COMPARTMENT)
-        # In this case, we are solving for time - the time when the gas tension in
-        # the compartment will be equal to ambient pressure.  The low bound for time
-        # is set at zero and the high bound is set at the time it would take to
-        # ascend to zero ambient pressure (absolute).  Since the ascent rate is
-        # negative, a multiplier of -1.0 is used to make the time positive.  The
-        # desired point when gas tension equals ambient pressure is found at a time
-        # somewhere between these endpoints.  The algorithm checks to make sure that
-        # the solution lies in between these bounds by first computing the low bound
-        # and high bound function values.
-
-        low_bound = 0.0
-        high_bound = -1.0 * (starting_ambient_pressure / rate)
-
-        for i in COMPARTMENT_RANGE:
-            initial_helium_pressure = self.Helium_Pressure[i]
-            initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-            function_at_low_bound = initial_helium_pressure + initial_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases - starting_ambient_pressure
-
-            high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], initial_helium_pressure)
-
-            high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
-
-            function_at_high_bound = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
-
-            if (function_at_high_bound * function_at_low_bound) >= 0.0:
-                raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
-
-            # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
-            # THE DESIRED ACCURACY IS FOUND
-            # Note: the program allows for up to 100 iterations.  Normally an exit will
-            # be made from the loop well before that number.  If, for some reason, the
-            # program exceeds 100 iterations, there will be a pause to alert the user.
-
-            if function_at_low_bound < 0.0:
-                time_to_start_of_deco_zone = low_bound
-                differential_change = high_bound - low_bound
-            else:
-                time_to_start_of_deco_zone = high_bound
-                differential_change = low_bound - high_bound
-
-            for j in range(100):
-                last_diff_change = differential_change
-                differential_change = last_diff_change * 0.5
-
-                mid_range_time = time_to_start_of_deco_zone + differential_change
-
-                mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], initial_helium_pressure)
-
-                mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
-
-                function_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases - (starting_ambient_pressure + rate * mid_range_time)
-
-                if function_at_mid_range <= 0.0:
-                    time_to_start_of_deco_zone = mid_range_time
-
-                if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
-                    break
-
-                if j == 100:
-                    raise MaxIterationException('ERROR! ROOT SEARCH EXCEEDED MAXIMUM ITERATIONS')
-
-            # When a solution with the desired accuracy is found, the program jumps out
-            # of the loop to Line 170 and assigns the solution value for the individual
-            # compartment.
-
-            cpt_depth_start_of_deco_zone = (starting_ambient_pressure + rate * time_to_start_of_deco_zone) - self.Barometric_Pressure
-            # The overall solution will be the compartment with the maximum depth where
-            # gas tension equals ambient pressure (leading compartment).
-
-            self.Depth_Start_of_Deco_Zone = max(self.Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
 
 
     def _calculate_deco_gradient(self, allowable_gradient_molecule, amb_press_first_stop_pascals, amb_press_next_stop_pascals):
@@ -891,6 +746,9 @@ class DiveState(object):
         rate = 0.0
         starting_depth = 0.0
         ending_depth = 0.0
+        Step_Size = 0.0
+        rate_Change = []
+        Step_Size_Change = []
         for dive in self.input_values:
             self.output_object.new_dive(dive.desc)
 
@@ -1168,7 +1026,32 @@ class DiveState(object):
                 elif profile.profile_code == ProfileCode.Constant:
                     self.Mix_Number = profile.gasmix
 
-                    self.gas_loadings_constant_depth(profile.depth, profile.run_time_at_end_of_segment)
+                    # START gas_loadings_constant_depth
+
+                    # Purpose: This subprogram applies the Haldane equation to update the
+                    # gas loadings (partial pressures of helium and nitrogen) in the half-time
+                    # compartments for a segment at constant depth.
+
+                    self.Segment_Time = profile.run_time_at_end_of_segment - self.Run_Time
+                    self.Run_Time = profile.run_time_at_end_of_segment
+                    self.Segment_Number += 1
+                    ambient_pressure = profile.depth + self.Barometric_Pressure
+
+                    inspired_helium_pressure = (ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
+
+                    inspired_nitrogen_pressure = (ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+                    self.Ending_Ambient_Pressure = ambient_pressure
+
+                    for i in COMPARTMENT_RANGE:
+                        temp_helium_pressure = self.Helium_Pressure[i]
+                        temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
+
+                        self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], self.Segment_Time)
+
+                        self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
+
+                    # END gas_loadings_constant_depth
 
                     self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.depth)
                 else:
@@ -1301,18 +1184,18 @@ class DiveState(object):
                     self.Depth_Change = [0.0] * self.Number_of_Changes
                     self.Mix_Change = [0.0] * self.Number_of_Changes
                     rate_Change = [0.0] * self.Number_of_Changes
-                    self.Step_Size_Change = [0.0] * self.Number_of_Changes
+                    Step_Size_Change = [0.0] * self.Number_of_Changes
 
                     for i, ascents in enumerate(profile.ascent_summary):
                         self.Depth_Change[i] = ascents.starting_depth
                         self.Mix_Change[i] = ascents.gasmix
                         rate_Change[i] = ascents.rate
-                        self.Step_Size_Change[i] = ascents.step_size
+                        Step_Size_Change[i] = ascents.step_size
 
                     starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
-                    self.Step_Size = self.Step_Size_Change[0]
+                    Step_Size = Step_Size_Change[0]
 
             # CALCULATE THE DEPTH WHERE THE DECOMPRESSION ZONE BEGINS FOR THIS PROFILE
             # BASED ON THE INITIAL ASCENT PARAMETERS AND WRITE THE DEEPEST POSSIBLE
@@ -1328,25 +1211,119 @@ class DiveState(object):
             # it is information to tell the diver where to start putting on the brakes
             # during ascent.  This should be prominently displayed by any deco program.
 
-            self.calc_start_of_deco_zone(starting_depth, rate)
+            # START calc_start_of_deco_zone(starting_depth, rate)
+
+            # Purpose: This subroutine uses the Bisection Method to find the depth at
+            # which the leading compartment just enters the decompression zone.
+            # Source:  "Numerical Recipes in Fortran 77", Cambridge University Press,
+            # 1992.
+
+            # First initialize some variables
+            Depth_Start_of_Deco_Zone = 0.0
+            starting_ambient_pressure = starting_depth + self.Barometric_Pressure
+
+            initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
+
+            initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+            helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
+            nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+            # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
+            # AND CHECK TO MAKE SURE THAT THE ROOT WILL BE WITHIN BOUNDS.  PROCESS
+            # EACH COMPARTMENT INDIVIDUALLY AND FIND THE MAXIMUM DEPTH ACROSS ALL
+            # COMPARTMENTS (LEADING COMPARTMENT)
+            # In this case, we are solving for time - the time when the gas tension in
+            # the compartment will be equal to ambient pressure.  The low bound for time
+            # is set at zero and the high bound is set at the time it would take to
+            # ascend to zero ambient pressure (absolute).  Since the ascent rate is
+            # negative, a multiplier of -1.0 is used to make the time positive.  The
+            # desired point when gas tension equals ambient pressure is found at a time
+            # somewhere between these endpoints.  The algorithm checks to make sure that
+            # the solution lies in between these bounds by first computing the low bound
+            # and high bound function values.
+
+            low_bound = 0.0
+            high_bound = -1.0 * (starting_ambient_pressure / rate)
+
+            for i in COMPARTMENT_RANGE:
+                initial_helium_pressure = self.Helium_Pressure[i]
+                initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
+
+                function_at_low_bound = initial_helium_pressure + initial_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases - starting_ambient_pressure
+
+                high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], initial_helium_pressure)
+
+                high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+
+                function_at_high_bound = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
+
+                if (function_at_high_bound * function_at_low_bound) >= 0.0:
+                    raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
+
+                # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
+                # THE DESIRED ACCURACY IS FOUND
+                # Note: the program allows for up to 100 iterations.  Normally an exit will
+                # be made from the loop well before that number.  If, for some reason, the
+                # program exceeds 100 iterations, there will be a pause to alert the user.
+
+                if function_at_low_bound < 0.0:
+                    time_to_start_of_deco_zone = low_bound
+                    differential_change = high_bound - low_bound
+                else:
+                    time_to_start_of_deco_zone = high_bound
+                    differential_change = low_bound - high_bound
+
+                for j in range(100):
+                    last_diff_change = differential_change
+                    differential_change = last_diff_change * 0.5
+
+                    mid_range_time = time_to_start_of_deco_zone + differential_change
+
+                    mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], initial_helium_pressure)
+
+                    mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+
+                    function_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases - (starting_ambient_pressure + rate * mid_range_time)
+
+                    if function_at_mid_range <= 0.0:
+                        time_to_start_of_deco_zone = mid_range_time
+
+                    if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
+                        break
+
+                    if j == 100:
+                        raise MaxIterationException('ERROR! ROOT SEARCH EXCEEDED MAXIMUM ITERATIONS')
+
+                # When a solution with the desired accuracy is found, the program jumps out
+                # of the loop to Line 170 and assigns the solution value for the individual
+                # compartment.
+
+                cpt_depth_start_of_deco_zone = (starting_ambient_pressure + rate * time_to_start_of_deco_zone) - self.Barometric_Pressure
+                # The overall solution will be the compartment with the maximum depth where
+                # gas tension equals ambient pressure (leading compartment).
+
+                Depth_Start_of_Deco_Zone = max(Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
+
+            # END calc_start_of_deco_zone(starting_depth, rate)
 
             # TODO Is this used at all?
             Deepest_Possible_Stop_Depth = 0.0
 
             if self.settings_values.Units == UnitsSW.FSW:
-                if self.Step_Size < 10.0:
-                    rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                    Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                if Step_Size < 10.0:
+                    rounding_op = (Depth_Start_of_Deco_Zone / Step_Size) - 0.5
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * Step_Size
                 else:
-                    rounding_op = (self.Depth_Start_of_Deco_Zone / 10.0) - 0.5
+                    rounding_op = (Depth_Start_of_Deco_Zone / 10.0) - 0.5
                     Deepest_Possible_Stop_Depth = round(rounding_op) * 10.0
 
             else:
-                if self.Step_Size < 3.0:
-                    rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                    Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                if Step_Size < 3.0:
+                    rounding_op = (Depth_Start_of_Deco_Zone / Step_Size) - 0.5
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * Step_Size
                 else:
-                    rounding_op = (self.Depth_Start_of_Deco_Zone / 3.0) - 0.5
+                    rounding_op = (Depth_Start_of_Deco_Zone / 3.0) - 0.5
                     Deepest_Possible_Stop_Depth = round(rounding_op) * 3.0
 
             #     TEMPORARILY ASCEND PROFILE TO THE START OF THE DECOMPRESSION ZONE, SAVE
@@ -1356,7 +1333,7 @@ class DiveState(object):
             #     released as a result of supersaturation gradients (not possible below the
             #     decompression zone).
 
-            self.gas_loadings_ascent_descent(starting_depth, self.Depth_Start_of_Deco_Zone, rate)
+            self.gas_loadings_ascent_descent(starting_depth, Depth_Start_of_Deco_Zone, rate)
             Run_Time_Start_of_Deco_Zone = self.Run_Time
             Deco_Phase_Volume_Time = 0.0
             Last_Run_Time = 0.0
@@ -1439,12 +1416,12 @@ class DiveState(object):
                 # END CALC_ASCENT_CEILING
 
                 if Ascent_Ceiling_Depth <= 0.0:
-                    self.Deco_Stop_Depth = 0.0
+                    Deco_Stop_Depth = 0.0
                 else:
-                    rounding_operation2 = (Ascent_Ceiling_Depth / self.Step_Size) + 0.5
-                    self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
+                    rounding_operation2 = (Ascent_Ceiling_Depth / Step_Size) + 0.5
+                    Deco_Stop_Depth = round(rounding_operation2) * Step_Size
 
-                if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                if Deco_Stop_Depth > Depth_Start_of_Deco_Zone:
                     raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
 
                 # PERFORM A SEPARATE "PROJECTED ASCENT" OUTSIDE OF THE MAIN PROGRAM TO MAKE
@@ -1464,8 +1441,8 @@ class DiveState(object):
                 # the stop depth will be adjusted deeper by the step size until a safe
                 # ascent can be made.
 
-                new_ambient_pressure = self.Deco_Stop_Depth + self.Barometric_Pressure
-                starting_ambient_pressure = self.Depth_Start_of_Deco_Zone + self.Barometric_Pressure
+                new_ambient_pressure = Deco_Stop_Depth + self.Barometric_Pressure
+                starting_ambient_pressure = Depth_Start_of_Deco_Zone + self.Barometric_Pressure
 
                 initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
 
@@ -1505,8 +1482,8 @@ class DiveState(object):
                     end_sub = True # TODO Build this condition into the while
                     for j in COMPARTMENT_RANGE:
                         if temp_gas_loading[j] > allowable_gas_loading[j]:
-                            new_ambient_pressure = ending_ambient_pressure + self.Step_Size
-                            self.Deco_Stop_Depth = self.Deco_Stop_Depth + self.Step_Size
+                            new_ambient_pressure = ending_ambient_pressure + Step_Size
+                            Deco_Stop_Depth = Deco_Stop_Depth + Step_Size
                             end_sub = False
 
                             break
@@ -1515,14 +1492,14 @@ class DiveState(object):
                         break
                 # END projected_ascent
 
-                if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
+                if Deco_Stop_Depth > Depth_Start_of_Deco_Zone:
                     raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
 
                 #     HANDLE THE SPECIAL CASE WHEN NO DECO STOPS ARE REQUIRED - ASCENT CAN BE
                 #     MADE DIRECTLY TO THE SURFACE
                 #     Write ascent data to output file and exit the Critical Volume Loop.
 
-                if self.Deco_Stop_Depth == 0.0:
+                if Deco_Stop_Depth == 0.0:
                     for i in COMPARTMENT_RANGE:
                         self.Helium_Pressure[i] = self.He_Pressure_Start_of_Ascent[i]
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
@@ -1533,14 +1510,14 @@ class DiveState(object):
                     ending_depth = 0.0
                     self.gas_loadings_ascent_descent(starting_depth, ending_depth, rate)
 
-                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, rate)
+                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, Deco_Stop_Depth, rate)
                     break
 
                 # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
                 # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
 
-                starting_depth = self.Depth_Start_of_Deco_Zone
-                First_Stop_Depth = self.Deco_Stop_Depth
+                starting_depth = Depth_Start_of_Deco_Zone
+                First_Stop_Depth = Deco_Stop_Depth
 
                 # START deco_stop_loop_block_within_critical_volume_loop
 
@@ -1560,25 +1537,25 @@ class DiveState(object):
                 # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
 
                 while True:
-                    self.gas_loadings_ascent_descent(starting_depth, self.Deco_Stop_Depth, rate)
+                    self.gas_loadings_ascent_descent(starting_depth, Deco_Stop_Depth, rate)
 
-                    if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
+                    if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                         break
 
                     if self.Number_of_Changes > 1:
                         for i in range(1, self.Number_of_Changes):
-                            if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                            if self.Depth_Change[i] >= Deco_Stop_Depth:
                                 self.Mix_Number = self.Mix_Change[i]
                                 rate = rate_Change[i]
-                                self.Step_Size = self.Step_Size_Change[i]
+                                Step_Size = Step_Size_Change[i]
 
-                    self.boyles_law_compensation(First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
+                    self.boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size)
 
-                    self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+                    self.decompression_stop(Deco_Stop_Depth, Step_Size)
 
-                    starting_depth = self.Deco_Stop_Depth
-                    Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                    self.Deco_Stop_Depth = Next_Stop
+                    starting_depth = Deco_Stop_Depth
+                    Next_Stop = Deco_Stop_Depth - Step_Size
+                    Deco_Stop_Depth = Next_Stop
                     Last_Run_Time = self.Run_Time
 
                 # END deco_stop_loop_block_within_critical_volume_loop
@@ -1667,14 +1644,14 @@ class DiveState(object):
                     starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
-                    self.Step_Size = self.Step_Size_Change[0]
-                    self.Deco_Stop_Depth = First_Stop_Depth
+                    Step_Size = Step_Size_Change[0]
+                    Deco_Stop_Depth = First_Stop_Depth
                     Last_Run_Time = 0.0
 
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
                     while True:
-                        self.gas_loadings_ascent_descent(starting_depth, self.Deco_Stop_Depth, rate)
+                        self.gas_loadings_ascent_descent(starting_depth, Deco_Stop_Depth, rate)
                         # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
                         # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
                         # If there is a repetitive dive, this will be used later in the VPM
@@ -1682,7 +1659,7 @@ class DiveState(object):
 
 
 
-                        # START self.calc_max_actual_gradient(self.Deco_Stop_Depth)
+                        # START self.calc_max_actual_gradient(Deco_Stop_Depth)
 
                         # Purpose: This subprogram calculates the actual supersaturation gradient
                         # obtained in each compartment as a result of the ascent profile during
@@ -1709,30 +1686,30 @@ class DiveState(object):
                         # application, so the values must be equal to or greater than zero.
 
                         for i in COMPARTMENT_RANGE:
-                            compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases) - (self.Deco_Stop_Depth + self.Barometric_Pressure)
+                            compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases) - (Deco_Stop_Depth + self.Barometric_Pressure)
                             if compartment_gradient <= 0.0:
                                 compartment_gradient = 0.0
 
                             self.Max_Actual_Gradient[i] = max(self.Max_Actual_Gradient[i], compartment_gradient)
 
-                        # END self.calc_max_actual_gradient(self.Deco_Stop_Depth)
+                        # END self.calc_max_actual_gradient(Deco_Stop_Depth)
 
 
 
 
-                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, rate)
-                        if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
+                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, Deco_Stop_Depth, rate)
+                        if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                             break
 
                         if self.Number_of_Changes > 1:
                             for i in range(1, self.Number_of_Changes):
-                                if self.Depth_Change[i] >= self.Deco_Stop_Depth:
+                                if self.Depth_Change[i] >= Deco_Stop_Depth:
                                     self.Mix_Number = self.Mix_Change[i]
                                     rate = rate_Change[i]
-                                    self.Step_Size = self.Step_Size_Change[i]
+                                    Step_Size = Step_Size_Change[i]
 
-                        self.boyles_law_compensation(First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
-                        self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
+                        self.boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size)
+                        self.decompression_stop(Deco_Stop_Depth, Step_Size)
                         # This next bit just rounds up the stop time at the first stop to be in
                         # whole increments of the minimum stop time (to make for a nice deco table).
 
@@ -1751,13 +1728,13 @@ class DiveState(object):
                         # continuous decompression schedule can be computed.
 
                         if trunc(self.settings_values.Minimum_Deco_Stop_Time) == self.settings_values.Minimum_Deco_Stop_Time:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(self.Deco_Stop_Depth), int(Stop_Time))
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, int(Deco_Stop_Depth), int(Stop_Time))
                         else:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, Stop_Time)
+                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, Deco_Stop_Depth, Stop_Time)
 
-                        starting_depth = self.Deco_Stop_Depth
-                        Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                        self.Deco_Stop_Depth = Next_Stop
+                        starting_depth = Deco_Stop_Depth
+                        Next_Stop = Deco_Stop_Depth - Step_Size
+                        Deco_Stop_Depth = Next_Stop
                         Last_Run_Time = self.Run_Time
 
                     # END critical_volume_decision_tree
@@ -1814,10 +1791,10 @@ class DiveState(object):
 
                     Deco_Phase_Volume_Time = 0.0
                     self.Run_Time = Run_Time_Start_of_Deco_Zone
-                    starting_depth = self.Depth_Start_of_Deco_Zone
+                    starting_depth = Depth_Start_of_Deco_Zone
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
-                    self.Step_Size = self.Step_Size_Change[0]
+                    Step_Size = Step_Size_Change[0]
                     for i in COMPARTMENT_RANGE:
                         self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
                         self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
