@@ -254,7 +254,6 @@ class DiveState(object):
         self.Depth = 0.0
         self.Ending_Depth = 0.0
         self.Starting_Depth = 0.0
-        self.Rate = 0.0
         self.Run_Time_End_of_Segment = 0.0
         self.Last_Run_Time = 0.0
         self.Stop_Time = 0.0
@@ -273,7 +272,7 @@ class DiveState(object):
         # Global Arrays
         self.Mix_Change = []
         self.Depth_Change = []
-        self.Rate_Change = []
+        rate_Change = []
         self.Step_Size_Change = []
         self.He_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
         self.N2_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
@@ -905,6 +904,7 @@ class DiveState(object):
         # This is the largest loop in the main program and operates between Lines
         # 30 and 330.  If there is one or more repetitive dives, the program will
         # return to this point to process each repetitive dive.
+        rate = 0
         for dive in self.input_values:
             self.output_object.new_dive(dive.desc)
 
@@ -954,12 +954,12 @@ class DiveState(object):
                 if profile.profile_code == ProfileCode.Descent:
                     self.Starting_Depth = profile.starting_depth
                     self.Ending_Depth = profile.ending_depth
-                    self.Rate = profile.rate
+                    rate = profile.rate
                     self.Mix_Number = profile.gasmix
 
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, rate)
                     if self.Ending_Depth > self.Starting_Depth:
-                        # START self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
+                        # START calc_crushing_pressure
 
                         # Purpose: Compute the effective "crushing pressure" in each compartment as
                         # a result of descent segment(s).  The crushing pressure is the gradient
@@ -1080,11 +1080,11 @@ class DiveState(object):
 
                                     initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
 
-                                    helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
-                                    nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                    helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
+                                    nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
                                     low_bound = 0.0
 
-                                    high_bound = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
+                                    high_bound = (ending_ambient_pressure - starting_ambient_pressure) / rate
 
                                     starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
 
@@ -1119,7 +1119,7 @@ class DiveState(object):
                                         differential_change = last_diff_change * 0.5
                                         mid_range_time = time + differential_change
 
-                                        mid_range_ambient_pressure = (starting_ambient_pressure + self.Rate * mid_range_time)
+                                        mid_range_ambient_pressure = (starting_ambient_pressure + rate * mid_range_time)
 
                                         mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
 
@@ -1167,7 +1167,7 @@ class DiveState(object):
                             self.Max_Crushing_Pressure_He[i] = max(self.Max_Crushing_Pressure_He[i], crushing_pressure_he)
                             self.Max_Crushing_Pressure_N2[i] = max(self.Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
 
-                        # END self.calc_crushing_pressure(self.Starting_Depth, self.Ending_Depth, self.Rate)
+                        # END calc_crushing_pressure
 
                     # the error seems unnecessary
                     if self.Ending_Depth > self.Starting_Depth:
@@ -1177,7 +1177,7 @@ class DiveState(object):
                     else:
                         word = 'ERROR'
 
-                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, self.Rate)
+                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
                     self.Depth = profile.depth
@@ -1316,18 +1316,18 @@ class DiveState(object):
                     self.Number_of_Changes = profile.number_of_ascent_parameter_changes
                     self.Depth_Change = [0.0] * self.Number_of_Changes
                     self.Mix_Change = [0.0] * self.Number_of_Changes
-                    self.Rate_Change = [0.0] * self.Number_of_Changes
+                    rate_Change = [0.0] * self.Number_of_Changes
                     self.Step_Size_Change = [0.0] * self.Number_of_Changes
 
                     for i, ascents in enumerate(profile.ascent_summary):
                         self.Depth_Change[i] = ascents.starting_depth
                         self.Mix_Change[i] = ascents.gasmix
-                        self.Rate_Change[i] = ascents.rate
+                        rate_Change[i] = ascents.rate
                         self.Step_Size_Change[i] = ascents.step_size
 
                     self.Starting_Depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
-                    self.Rate = self.Rate_Change[0]
+                    rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
 
             # CALCULATE THE DEPTH WHERE THE DECOMPRESSION ZONE BEGINS FOR THIS PROFILE
@@ -1344,7 +1344,7 @@ class DiveState(object):
             # it is information to tell the diver where to start putting on the brakes
             # during ascent.  This should be prominently displayed by any deco program.
 
-            self.calc_start_of_deco_zone(self.Starting_Depth, self.Rate)
+            self.calc_start_of_deco_zone(self.Starting_Depth, rate)
 
             if self.settings_values.Units == UnitsSW.FSW:
                 if self.Step_Size < 10.0:
@@ -1369,7 +1369,7 @@ class DiveState(object):
             #     released as a result of supersaturation gradients (not possible below the
             #     decompression zone).
 
-            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Depth_Start_of_Deco_Zone, self.Rate)
+            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Depth_Start_of_Deco_Zone, rate)
             self.Run_Time_Start_of_Deco_Zone = self.Run_Time
             self.Deco_Phase_Volume_Time = 0.0
             self.Last_Run_Time = 0.0
@@ -1469,7 +1469,7 @@ class DiveState(object):
                 # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
                 # DECO ZONE.
 
-                # START self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
+                # START projected_ascent
 
                 # Purpose: This subprogram performs a simulated ascent outside of the main
                 # program to ensure that a deco ceiling will not be violated due to unusual
@@ -1484,8 +1484,8 @@ class DiveState(object):
 
                 initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
 
-                helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
-                nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+                helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
+                nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
 
                 temp_gas_loading = [0.0] * ARRAY_LENGTH
                 allowable_gas_loading = [0.0] * ARRAY_LENGTH
@@ -1499,7 +1499,7 @@ class DiveState(object):
                 while True:
                     ending_ambient_pressure = new_ambient_pressure
 
-                    segment_time = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
+                    segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
 
                     for i in COMPARTMENT_RANGE:
                         temp_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, self.Helium_Time_Constant[i], initial_helium_pressure[i])
@@ -1526,7 +1526,7 @@ class DiveState(object):
 
                     if end_sub:
                         break
-                # END self.projected_ascent(self.Depth_Start_of_Deco_Zone, self.Rate, self.Step_Size)
+                # END projected_ascent
 
                 if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
                     raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
@@ -1544,9 +1544,9 @@ class DiveState(object):
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
                     self.Starting_Depth = self.Depth_Change[0]
                     self.Ending_Depth = 0.0
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, self.Rate)
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, rate)
 
-                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, rate)
                     break
 
                 # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
@@ -1573,7 +1573,7 @@ class DiveState(object):
                 # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
 
                 while True:
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, rate)
 
                     if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                         break
@@ -1582,7 +1582,7 @@ class DiveState(object):
                         for i in range(1, self.Number_of_Changes):
                             if self.Depth_Change[i] >= self.Deco_Stop_Depth:
                                 self.Mix_Number = self.Mix_Change[i]
-                                self.Rate = self.Rate_Change[i]
+                                rate = rate_Change[i]
                                 self.Step_Size = self.Step_Size_Change[i]
 
                     self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
@@ -1679,7 +1679,7 @@ class DiveState(object):
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
                     self.Starting_Depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
-                    self.Rate = self.Rate_Change[0]
+                    rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
                     self.Deco_Stop_Depth = self.First_Stop_Depth
                     self.Last_Run_Time = 0.0
@@ -1687,7 +1687,7 @@ class DiveState(object):
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
                     while True:
-                        self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, self.Rate)
+                        self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, rate)
                         # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
                         # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
                         # If there is a repetitive dive, this will be used later in the VPM
@@ -1733,7 +1733,7 @@ class DiveState(object):
 
 
 
-                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Rate)
+                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, rate)
                         if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                             break
 
@@ -1741,7 +1741,7 @@ class DiveState(object):
                             for i in range(1, self.Number_of_Changes):
                                 if self.Depth_Change[i] >= self.Deco_Stop_Depth:
                                     self.Mix_Number = self.Mix_Change[i]
-                                    self.Rate = self.Rate_Change[i]
+                                    rate = rate_Change[i]
                                     self.Step_Size = self.Step_Size_Change[i]
 
                         self.boyles_law_compensation(self.First_Stop_Depth, self.Deco_Stop_Depth, self.Step_Size)
@@ -1829,7 +1829,7 @@ class DiveState(object):
                     self.Run_Time = self.Run_Time_Start_of_Deco_Zone
                     self.Starting_Depth = self.Depth_Start_of_Deco_Zone
                     self.Mix_Number = self.Mix_Change[0]
-                    self.Rate = self.Rate_Change[0]
+                    rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
                     for i in COMPARTMENT_RANGE:
                         self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
