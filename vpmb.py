@@ -419,101 +419,6 @@ class DiveState(object):
         return (crushing_pressure_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
 
 
-    def onset_of_impermeability(self, starting_ambient_pressure, ending_ambient_pressure, rate, i):
-        """
-        Purpose:  This subroutine uses the Bisection Method to find the ambient
-        pressure and gas tension at the onset of impermeability for a given
-        compartment.  Source:  "Numerical Recipes in Fortran 77",
-        Cambridge University Press, 1992.
-
-        Side Effects: Sets
-        `self.Amb_Pressure_Onset_of_Imperm`,
-        `self.Gas_Tension_Onset_of_Imperm`
-
-        or
-
-        Raises a RootException
-
-        Returns: None
-        """
-        # First convert the Gradient for Onset of Impermeability to the diving
-        # pressure units that are being used
-
-        gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()
-
-        # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
-        # In this case, we are solving for time - the time when the ambient pressure
-        # minus the gas tension will be equal to the Gradient for Onset of
-        # Impermeability.  The low bound for time is set at zero and the high
-        # bound is set at the elapsed time (segment time) it took to go from the
-        # starting ambient pressure to the ending ambient pressure.  The desired
-        # ambient pressure and gas tension at the onset of impermeability will
-        # be found somewhere between these endpoints.  The algorithm checks to
-        # make sure that the solution lies in between these bounds by first
-        # computing the low bound and high bound function values.
-
-        initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-        initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-        helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
-        nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-        low_bound = 0.0
-
-        high_bound = (ending_ambient_pressure - starting_ambient_pressure) / rate
-
-        starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
-
-        function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
-
-        high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-        high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-        ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
-
-        function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
-
-        if(function_at_high_bound * function_at_low_bound) >= 0.0:
-            raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
-
-        # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
-        # THE DESIRED ACCURACY IS FOUND
-        # Note: the program allows for up to 100 iterations.  Normally an exit will
-        # be made from the loop well before that number.  If, for some reason, the
-        # program exceeds 100 iterations, there will be a pause to alert the user.
-
-        if function_at_low_bound < 0.0:
-            time = low_bound
-            differential_change = high_bound - low_bound
-        else:
-            time = high_bound
-            differential_change = low_bound - high_bound
-
-        for j in range(100):
-            last_diff_change = differential_change
-            differential_change = last_diff_change * 0.5
-            mid_range_time = time + differential_change
-
-            mid_range_ambient_pressure = (starting_ambient_pressure + rate * mid_range_time)
-
-            mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-            mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-            gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
-
-            function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
-
-            if function_at_mid_range <= 0.0:
-                time = mid_range_time
-
-            # When a solution with the desired accuracy is found, the program breaks
-            if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
-                break
-
-        self.Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
-        self.Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
 
     def gas_loadings_constant_depth(self, depth, run_time_end_of_segment):
         """
@@ -760,8 +665,60 @@ class DiveState(object):
 
                 self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
 
-            deco_ceiling_depth = self.calc_deco_ceiling()
-            if deco_ceiling_depth > next_stop:
+            # START calc_deco_ceiling
+
+            # Purpose: This subprogram calculates the deco ceiling (the safe ascent
+            # depth) in each compartment, based on the allowable "deco gradients"
+            # computed in the Boyle's Law Compensation subroutine, and then finds the
+            # deepest deco ceiling across all compartments.  This deepest value
+            # (Deco Ceiling Depth) is then used by the Decompression Stop subroutine
+            # to determine the actual deco schedule.
+
+            # Side Effects: None
+
+            # Since there are two sets of deco gradients being tracked, one for
+            # helium and one for nitrogen, a "weighted allowable gradient" must be
+            # computed each time based on the proportions of helium and nitrogen in
+            # each compartment.  This proportioning follows the methodology of
+            # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
+            # such as after extended periods of oxygen breathing, then the minimum value
+            # across both gases will be used.  It is important to note that if a
+            # compartment is empty of helium and nitrogen, then the weighted allowable
+            # gradient formula cannot be used since it will result in division by zero.
+
+            compartment_deco_ceiling = [0.0] * ARRAY_LENGTH
+
+            for i in COMPARTMENT_RANGE:
+                gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
+
+                if gas_loading > 0.0:
+                    weighted_allowable_gradient = (self.Deco_Gradient_He[i] * self.Helium_Pressure[i] + self.Deco_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
+
+                    tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
+                else:
+                    weighted_allowable_gradient = min(self.Deco_Gradient_He[i], self.Deco_Gradient_N2[i])
+                    tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
+
+                # The tolerated ambient pressure cannot be less than zero absolute, i.e.,
+                # the vacuum of outer space!
+                if tolerated_ambient_pressure < 0.0:
+                    tolerated_ambient_pressure = 0.0
+
+                # The Deco Ceiling Depth is computed in a loop after all of the individual
+                # compartment deco ceilings have been calculated.  It is important that the
+                # Deco Ceiling Depth (max deco ceiling across all compartments) only be
+                # extracted from the compartment values and not be compared against some
+                # initialization value.  For example, if MAX(deco_ceiling_depth . .) was
+                # compared against zero, this could cause a program lockup because sometimes
+                # the Deco Ceiling Depth needs to be negative (but not less than absolute
+                # zero) in order to decompress to the last stop at zero depth.
+
+                compartment_deco_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
+
+            deco_ceiling_depth = max(compartment_deco_ceiling)
+
+            # END calc_deco_ceiling
+            if deco_ceiling_depth > next_stop: # TODO Build this into the loop condition
                 self.Segment_Time = self.settings_values.Minimum_Deco_Stop_Time
                 time_counter = temp_segment_time
                 temp_segment_time = time_counter + self.settings_values.Minimum_Deco_Stop_Time
@@ -771,63 +728,6 @@ class DiveState(object):
             break
 
         self.Segment_Time = temp_segment_time
-
-    def calc_deco_ceiling(self):
-        """
-        Purpose: This subprogram calculates the deco ceiling (the safe ascent
-        depth) in each compartment, based on the allowable "deco gradients"
-        computed in the Boyle's Law Compensation subroutine, and then finds the
-        deepest deco ceiling across all compartments.  This deepest value
-        (Deco Ceiling Depth) is then used by the Decompression Stop subroutine
-        to determine the actual deco schedule.
-
-        Side Effects: None
-
-        Returns: `self.deco_ceiling_depth`
-        """
-
-        # Since there are two sets of deco gradients being tracked, one for
-        # helium and one for nitrogen, a "weighted allowable gradient" must be
-        # computed each time based on the proportions of helium and nitrogen in
-        # each compartment.  This proportioning follows the methodology of
-        # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
-        # such as after extended periods of oxygen breathing, then the minimum value
-        # across both gases will be used.  It is important to note that if a
-        # compartment is empty of helium and nitrogen, then the weighted allowable
-        # gradient formula cannot be used since it will result in division by zero.
-
-        compartment_deco_ceiling = [0.0] * ARRAY_LENGTH
-
-        for i in COMPARTMENT_RANGE:
-            gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
-
-            if gas_loading > 0.0:
-                weighted_allowable_gradient = (self.Deco_Gradient_He[i] * self.Helium_Pressure[i] + self.Deco_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
-
-                tolerated_ambient_pressure = (gas_loading + self.settings_values.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
-            else:
-                weighted_allowable_gradient = min(self.Deco_Gradient_He[i], self.Deco_Gradient_N2[i])
-                tolerated_ambient_pressure = self.settings_values.Constant_Pressure_Other_Gases - weighted_allowable_gradient
-
-            # The tolerated ambient pressure cannot be less than zero absolute, i.e.,
-            # the vacuum of outer space!
-            if tolerated_ambient_pressure < 0.0:
-                tolerated_ambient_pressure = 0.0
-
-            # The Deco Ceiling Depth is computed in a loop after all of the individual
-            # compartment deco ceilings have been calculated.  It is important that the
-            # Deco Ceiling Depth (max deco ceiling across all compartments) only be
-            # extracted from the compartment values and not be compared against some
-            # initialization value.  For example, if MAX(deco_ceiling_depth . .) was
-            # compared against zero, this could cause a program lockup because sometimes
-            # the Deco Ceiling Depth needs to be negative (but not less than absolute
-            # zero) in order to decompress to the last stop at zero depth.
-
-            compartment_deco_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
-
-        deco_ceiling_depth = max(compartment_deco_ceiling)
-
-        return deco_ceiling_depth
 
     def initialize_data(self):
         """
@@ -1138,7 +1038,100 @@ class DiveState(object):
                             # In most cases, a subroutine will be called to find these values using a
                             # numerical method.
                             if starting_gradient < gradient_onset_of_imperm:
-                                self.onset_of_impermeability(starting_ambient_pressure, ending_ambient_pressure, self.Rate, i)
+                                # START onset_of_impermeability
+
+                                # Purpose:  This subroutine uses the Bisection Method to find the ambient
+                                # pressure and gas tension at the onset of impermeability for a given
+                                # compartment.  Source:  "Numerical Recipes in Fortran 77",
+                                # Cambridge University Press, 1992.
+
+                                # Side Effects: Sets
+                                # `self.Amb_Pressure_Onset_of_Imperm`,
+                                # `self.Gas_Tension_Onset_of_Imperm`
+
+                                # or
+
+                                # Raises a RootException
+
+                                # First convert the Gradient for Onset of Impermeability to the diving
+                                # pressure units that are being used
+
+                                gradient_onset_of_imperm = self.settings_values.Gradient_Onset_of_Imperm_Atm * self.settings_values.Units.toUnitsFactor()
+
+                                # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
+                                # In this case, we are solving for time - the time when the ambient pressure
+                                # minus the gas tension will be equal to the Gradient for Onset of
+                                # Impermeability.  The low bound for time is set at zero and the high
+                                # bound is set at the elapsed time (segment time) it took to go from the
+                                # starting ambient pressure to the ending ambient pressure.  The desired
+                                # ambient pressure and gas tension at the onset of impermeability will
+                                # be found somewhere between these endpoints.  The algorithm checks to
+                                # make sure that the solution lies in between these bounds by first
+                                # computing the low bound and high bound function values.
+
+                                initial_inspired_he_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
+
+                                initial_inspired_n2_pressure = (starting_ambient_pressure - self.settings_values.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
+
+                                helium_rate = self.Rate * self.Fraction_Helium[self.Mix_Number - 1]
+                                nitrogen_rate = self.Rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                low_bound = 0.0
+
+                                high_bound = (ending_ambient_pressure - starting_ambient_pressure) / self.Rate
+
+                                starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + self.settings_values.Constant_Pressure_Other_Gases
+
+                                function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
+
+                                high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
+
+                                high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
+
+                                ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
+
+                                function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
+
+                                if(function_at_high_bound * function_at_low_bound) >= 0.0:
+                                    raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
+
+                                # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
+                                # THE DESIRED ACCURACY IS FOUND
+                                # Note: the program allows for up to 100 iterations.  Normally an exit will
+                                # be made from the loop well before that number.  If, for some reason, the
+                                # program exceeds 100 iterations, there will be a pause to alert the user.
+
+                                if function_at_low_bound < 0.0:
+                                    time = low_bound
+                                    differential_change = high_bound - low_bound
+                                else:
+                                    time = high_bound
+                                    differential_change = low_bound - high_bound
+
+                                for j in range(100):
+                                    last_diff_change = differential_change
+                                    differential_change = last_diff_change * 0.5
+                                    mid_range_time = time + differential_change
+
+                                    mid_range_ambient_pressure = (starting_ambient_pressure + self.Rate * mid_range_time)
+
+                                    mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
+
+                                    mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
+
+                                    gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + self.settings_values.Constant_Pressure_Other_Gases
+
+                                    function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
+
+                                    if function_at_mid_range <= 0.0:
+                                        time = mid_range_time
+
+                                    # When a solution with the desired accuracy is found, the program breaks
+                                    if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
+                                        break
+
+                                self.Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
+                                self.Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
+                                # END onset_of_impermeability
 
                             # Next, using the values for ambient pressure and gas tension at the onset
                             # of impermeability, the equations are set up to process the calculations
