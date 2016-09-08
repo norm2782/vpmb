@@ -253,7 +253,6 @@ class DiveState(object):
         self.Sum_Check = 0.0
         self.Depth = 0.0
         self.Ending_Depth = 0.0
-        self.Starting_Depth = 0.0
         self.Run_Time_End_of_Segment = 0.0
         self.Last_Run_Time = 0.0
         self.Stop_Time = 0.0
@@ -904,7 +903,8 @@ class DiveState(object):
         # This is the largest loop in the main program and operates between Lines
         # 30 and 330.  If there is one or more repetitive dives, the program will
         # return to this point to process each repetitive dive.
-        rate = 0
+        rate = 0.0
+        starting_depth = 0.0
         for dive in self.input_values:
             self.output_object.new_dive(dive.desc)
 
@@ -952,13 +952,13 @@ class DiveState(object):
 
             for profile in dive.profile_codes:
                 if profile.profile_code == ProfileCode.Descent:
-                    self.Starting_Depth = profile.starting_depth
+                    starting_depth = profile.starting_depth
                     self.Ending_Depth = profile.ending_depth
                     rate = profile.rate
                     self.Mix_Number = profile.gasmix
 
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, rate)
-                    if self.Ending_Depth > self.Starting_Depth:
+                    self.gas_loadings_ascent_descent(starting_depth, self.Ending_Depth, rate)
+                    if self.Ending_Depth > starting_depth:
                         # START calc_crushing_pressure
 
                         # Purpose: Compute the effective "crushing pressure" in each compartment as
@@ -1004,7 +1004,7 @@ class DiveState(object):
 
                         # Assign values of starting and ending ambient pressures for descent segment
 
-                        starting_ambient_pressure = self.Starting_Depth + self.Barometric_Pressure
+                        starting_ambient_pressure = starting_depth + self.Barometric_Pressure
                         ending_ambient_pressure = self.Ending_Depth + self.Barometric_Pressure
 
                         # MAIN LOOP WITH NESTED DECISION TREE
@@ -1170,14 +1170,14 @@ class DiveState(object):
                         # END calc_crushing_pressure
 
                     # the error seems unnecessary
-                    if self.Ending_Depth > self.Starting_Depth:
+                    if self.Ending_Depth > starting_depth:
                         word = 'Descent'
-                    elif self.Starting_Depth > self.Ending_Depth:
+                    elif starting_depth > self.Ending_Depth:
                         word = 'Ascent '
                     else:
                         word = 'ERROR'
 
-                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, self.Starting_Depth, self.Ending_Depth, rate)
+                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, starting_depth, self.Ending_Depth, rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
                     self.Depth = profile.depth
@@ -1325,7 +1325,7 @@ class DiveState(object):
                         rate_Change[i] = ascents.rate
                         self.Step_Size_Change[i] = ascents.step_size
 
-                    self.Starting_Depth = self.Depth_Change[0]
+                    starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
@@ -1344,7 +1344,7 @@ class DiveState(object):
             # it is information to tell the diver where to start putting on the brakes
             # during ascent.  This should be prominently displayed by any deco program.
 
-            self.calc_start_of_deco_zone(self.Starting_Depth, rate)
+            self.calc_start_of_deco_zone(starting_depth, rate)
 
             if self.settings_values.Units == UnitsSW.FSW:
                 if self.Step_Size < 10.0:
@@ -1369,7 +1369,7 @@ class DiveState(object):
             #     released as a result of supersaturation gradients (not possible below the
             #     decompression zone).
 
-            self.gas_loadings_ascent_descent(self.Starting_Depth, self.Depth_Start_of_Deco_Zone, rate)
+            self.gas_loadings_ascent_descent(starting_depth, self.Depth_Start_of_Deco_Zone, rate)
             self.Run_Time_Start_of_Deco_Zone = self.Run_Time
             self.Deco_Phase_Volume_Time = 0.0
             self.Last_Run_Time = 0.0
@@ -1542,9 +1542,9 @@ class DiveState(object):
 
                     self.Run_Time = self.Run_Time_Start_of_Ascent
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
-                    self.Starting_Depth = self.Depth_Change[0]
+                    starting_depth = self.Depth_Change[0]
                     self.Ending_Depth = 0.0
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Ending_Depth, rate)
+                    self.gas_loadings_ascent_descent(starting_depth, self.Ending_Depth, rate)
 
                     self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, rate)
                     break
@@ -1552,7 +1552,7 @@ class DiveState(object):
                 # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
                 # FIRST STOP DEPTH FOR LATER USE WHEN COMPUTING THE FINAL ASCENT PROFILE
 
-                self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+                starting_depth = self.Depth_Start_of_Deco_Zone
                 self.First_Stop_Depth = self.Deco_Stop_Depth
 
                 # START deco_stop_loop_block_within_critical_volume_loop
@@ -1573,7 +1573,7 @@ class DiveState(object):
                 # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
 
                 while True:
-                    self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, rate)
+                    self.gas_loadings_ascent_descent(starting_depth, self.Deco_Stop_Depth, rate)
 
                     if self.Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                         break
@@ -1589,7 +1589,7 @@ class DiveState(object):
 
                     self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
 
-                    self.Starting_Depth = self.Deco_Stop_Depth
+                    starting_depth = self.Deco_Stop_Depth
                     self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
                     self.Deco_Stop_Depth = self.Next_Stop
                     self.Last_Run_Time = self.Run_Time
@@ -1677,7 +1677,7 @@ class DiveState(object):
 
                     self.Run_Time = self.Run_Time_Start_of_Ascent
                     self.Segment_Number = self.Segment_Number_Start_of_Ascent
-                    self.Starting_Depth = self.Depth_Change[0]
+                    starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
@@ -1687,7 +1687,7 @@ class DiveState(object):
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
                     while True:
-                        self.gas_loadings_ascent_descent(self.Starting_Depth, self.Deco_Stop_Depth, rate)
+                        self.gas_loadings_ascent_descent(starting_depth, self.Deco_Stop_Depth, rate)
                         # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
                         # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
                         # If there is a repetitive dive, this will be used later in the VPM
@@ -1768,7 +1768,7 @@ class DiveState(object):
                         else:
                             self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
 
-                        self.Starting_Depth = self.Deco_Stop_Depth
+                        starting_depth = self.Deco_Stop_Depth
                         self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
                         self.Deco_Stop_Depth = self.Next_Stop
                         self.Last_Run_Time = self.Run_Time
@@ -1827,7 +1827,7 @@ class DiveState(object):
 
                     self.Deco_Phase_Volume_Time = 0.0
                     self.Run_Time = self.Run_Time_Start_of_Deco_Zone
-                    self.Starting_Depth = self.Depth_Start_of_Deco_Zone
+                    starting_depth = self.Depth_Start_of_Deco_Zone
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
                     self.Step_Size = self.Step_Size_Change[0]
