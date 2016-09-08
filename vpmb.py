@@ -247,22 +247,14 @@ class DiveState(object):
         self.Segment_Number_Start_of_Ascent = 0
 
         # floats
-        self.Ascent_Ceiling_Depth = 0.0
         self.Deco_Stop_Depth = 0.0
         self.Step_Size = 0.0
-        self.Sum_Check = 0.0
-        self.Depth = 0.0
-        self.Run_Time_End_of_Segment = 0.0
         self.Last_Run_Time = 0.0
         self.Stop_Time = 0.0
         self.Depth_Start_of_Deco_Zone = 0.0
-        self.Deepest_Possible_Stop_Depth = 0.0
         self.First_Stop_Depth = 0.0
-        self.Critical_Volume_Comparison = 0.0
-        self.Next_Stop = 0.0
         self.Run_Time_Start_of_Deco_Zone = 0.0
         self.Run_Time_Start_of_Ascent = 0.0
-        self.Altitude_of_Dive = 0.0
         self.Deco_Phase_Volume_Time = 0.0
         self.Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
         self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
@@ -888,8 +880,7 @@ class DiveState(object):
                     self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], time_at_altitude_before_dive)
             # END vpm_altitude_dive_algorithm
         else:
-            self.Altitude_of_Dive = 0.0
-            self.Barometric_Pressure = calc_barometric_pressure(self.Altitude_of_Dive, self.settings_values.Units)
+            self.Barometric_Pressure = calc_barometric_pressure(0.0, self.settings_values.Units)
 
             for i in COMPARTMENT_RANGE:
                 self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
@@ -1180,13 +1171,11 @@ class DiveState(object):
                     self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, starting_depth, ending_depth, rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
-                    self.Depth = profile.depth
-                    self.Run_Time_End_of_Segment = profile.run_time_at_end_of_segment
                     self.Mix_Number = profile.gasmix
 
-                    self.gas_loadings_constant_depth(self.Depth, self.Run_Time_End_of_Segment)
+                    self.gas_loadings_constant_depth(profile.depth, profile.run_time_at_end_of_segment)
 
-                    self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Depth)
+                    self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.depth)
                 else:
                     break
 
@@ -1346,21 +1335,24 @@ class DiveState(object):
 
             self.calc_start_of_deco_zone(starting_depth, rate)
 
+            # TODO Is this used at all?
+            Deepest_Possible_Stop_Depth = 0.0
+
             if self.settings_values.Units == UnitsSW.FSW:
                 if self.Step_Size < 10.0:
                     rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
                 else:
                     rounding_op = (self.Depth_Start_of_Deco_Zone / 10.0) - 0.5
-                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * 10.0
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * 10.0
 
             else:
                 if self.Step_Size < 3.0:
                     rounding_op = (self.Depth_Start_of_Deco_Zone / self.Step_Size) - 0.5
-                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * self.Step_Size
                 else:
                     rounding_op = (self.Depth_Start_of_Deco_Zone / 3.0) - 0.5
-                    self.Deepest_Possible_Stop_Depth = round(rounding_op) * 3.0
+                    Deepest_Possible_Stop_Depth = round(rounding_op) * 3.0
 
             #     TEMPORARILY ASCEND PROFILE TO THE START OF THE DECOMPRESSION ZONE, SAVE
             #     VARIABLES AT THIS POINT, AND INITIALIZE VARIABLES FOR CRITICAL VOLUME LOOP
@@ -1447,14 +1439,14 @@ class DiveState(object):
 
                     compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
 
-                self.Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
+                Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
 
                 # END CALC_ASCENT_CEILING
 
-                if self.Ascent_Ceiling_Depth <= 0.0:
+                if Ascent_Ceiling_Depth <= 0.0:
                     self.Deco_Stop_Depth = 0.0
                 else:
-                    rounding_operation2 = (self.Ascent_Ceiling_Depth / self.Step_Size) + 0.5
+                    rounding_operation2 = (Ascent_Ceiling_Depth / self.Step_Size) + 0.5
                     self.Deco_Stop_Depth = round(rounding_operation2) * self.Step_Size
 
                 if self.Deco_Stop_Depth > self.Depth_Start_of_Deco_Zone:
@@ -1590,8 +1582,8 @@ class DiveState(object):
                     self.decompression_stop(self.Deco_Stop_Depth, self.Step_Size)
 
                     starting_depth = self.Deco_Stop_Depth
-                    self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                    self.Deco_Stop_Depth = self.Next_Stop
+                    Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                    self.Deco_Stop_Depth = Next_Stop
                     self.Last_Run_Time = self.Run_Time
 
                 # END deco_stop_loop_block_within_critical_volume_loop
@@ -1645,8 +1637,8 @@ class DiveState(object):
 
                 for i in COMPARTMENT_RANGE:
                     self.Phase_Volume_Time[i] = self.Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
-                    self.Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
-                    if self.Critical_Volume_Comparison <= 1.0:
+                    Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
+                    if Critical_Volume_Comparison <= 1.0:
                         Schedule_Converged = True
 
                 # There are two options here.  If the Critical Volume Algorithm setting is
@@ -1769,8 +1761,8 @@ class DiveState(object):
                             self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, self.Deco_Stop_Depth, self.Stop_Time)
 
                         starting_depth = self.Deco_Stop_Depth
-                        self.Next_Stop = self.Deco_Stop_Depth - self.Step_Size
-                        self.Deco_Stop_Depth = self.Next_Stop
+                        Next_Stop = self.Deco_Stop_Depth - self.Step_Size
+                        self.Deco_Stop_Depth = Next_Stop
                         self.Last_Run_Time = self.Run_Time
 
                     # END critical_volume_decision_tree
