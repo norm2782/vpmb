@@ -246,23 +246,13 @@ class DiveState(object):
         self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
 
         # Global Arrays
-        self.Mix_Change = []
-        self.Depth_Change = []
         self.He_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
         self.N2_Pressure_Start_of_Ascent = [0.0] * ARRAY_LENGTH
         self.He_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
         self.N2_Pressure_Start_of_Deco_Zone = [0.0] * ARRAY_LENGTH
-        self.Phase_Volume_Time = [0.0] * ARRAY_LENGTH
-        self.Last_Phase_Volume_Time = [0.0] * ARRAY_LENGTH
 
         self.Allowable_Gradient_He = [0.0] * ARRAY_LENGTH
         self.Allowable_Gradient_N2 = [0.0] * ARRAY_LENGTH
-
-        self.Adjusted_Crushing_Pressure_He = [0.0] * ARRAY_LENGTH
-        self.Adjusted_Crushing_Pressure_N2 = [0.0] * ARRAY_LENGTH
-
-        self.Initial_Allowable_Gradient_N2 = [0.0] * ARRAY_LENGTH
-        self.Initial_Allowable_Gradient_He = [0.0] * ARRAY_LENGTH
 
         self.Deco_Gradient_He = [0.0] * ARRAY_LENGTH
         self.Deco_Gradient_N2 = [0.0] * ARRAY_LENGTH
@@ -741,6 +731,19 @@ class DiveState(object):
         Step_Size = 0.0
         rate_Change = []
         Step_Size_Change = []
+
+        Mix_Change = []
+        Depth_Change = []
+
+        Phase_Volume_Time = [0.0] * ARRAY_LENGTH
+        Last_Phase_Volume_Time = [0.0] * ARRAY_LENGTH
+
+        Adjusted_Crushing_Pressure_He = [0.0] * ARRAY_LENGTH
+        Adjusted_Crushing_Pressure_N2 = [0.0] * ARRAY_LENGTH
+
+        Initial_Allowable_Gradient_N2 = [0.0] * ARRAY_LENGTH
+        Initial_Allowable_Gradient_He = [0.0] * ARRAY_LENGTH
+
         for dive in self.input_values:
             self.output_object.new_dive(dive.desc)
 
@@ -1104,8 +1107,8 @@ class DiveState(object):
                 adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
                 adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
 
-                self.Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
-                self.Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+                Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
+                Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
 
             # END nuclear_regeneration
 
@@ -1144,11 +1147,11 @@ class DiveState(object):
 
                 initial_allowable_grad_he_pa = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (self.Regenerated_Radius_He[i] * self.settings_values.Skin_Compression_GammaC))
 
-                self.Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * self.settings_values.Units.toUnitsFactor()
-                self.Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * self.settings_values.Units.toUnitsFactor()
+                Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * self.settings_values.Units.toUnitsFactor()
+                Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * self.settings_values.Units.toUnitsFactor()
 
-                self.Allowable_Gradient_He[i] = self.Initial_Allowable_Gradient_He[i]
-                self.Allowable_Gradient_N2[i] = self.Initial_Allowable_Gradient_N2[i]
+                self.Allowable_Gradient_He[i] = Initial_Allowable_Gradient_He[i]
+                self.Allowable_Gradient_N2[i] = Initial_Allowable_Gradient_N2[i]
 
             # END self.calc_initial_allowable_gradient()
 
@@ -1175,19 +1178,19 @@ class DiveState(object):
             for profile in dive.profile_codes:
                 if profile.profile_code == ProfileCode.Ascent:
                     Number_of_Changes = profile.number_of_ascent_parameter_changes
-                    self.Depth_Change = [0.0] * Number_of_Changes
-                    self.Mix_Change = [0.0] * Number_of_Changes
+                    Depth_Change = [0.0] * Number_of_Changes
+                    Mix_Change = [0.0] * Number_of_Changes
                     rate_Change = [0.0] * Number_of_Changes
                     Step_Size_Change = [0.0] * Number_of_Changes
 
                     for i, ascents in enumerate(profile.ascent_summary):
-                        self.Depth_Change[i] = ascents.starting_depth
-                        self.Mix_Change[i] = ascents.gasmix
+                        Depth_Change[i] = ascents.starting_depth
+                        Mix_Change[i] = ascents.gasmix
                         rate_Change[i] = ascents.rate
                         Step_Size_Change[i] = ascents.step_size
 
-                    starting_depth = self.Depth_Change[0]
-                    self.Mix_Number = self.Mix_Change[0]
+                    starting_depth = Depth_Change[0]
+                    self.Mix_Number = Mix_Change[0]
                     rate = rate_Change[0]
                     Step_Size = Step_Size_Change[0]
 
@@ -1333,7 +1336,7 @@ class DiveState(object):
             Last_Run_Time = 0.0
 
             for i in COMPARTMENT_RANGE:
-                self.Last_Phase_Volume_Time[i] = 0.0
+                Last_Phase_Volume_Time[i] = 0.0
                 self.He_Pressure_Start_of_Deco_Zone[i] = self.Helium_Pressure[i]
                 self.N2_Pressure_Start_of_Deco_Zone[i] = self.Nitrogen_Pressure[i]
                 self.Max_Actual_Gradient[i] = 0.0
@@ -1500,7 +1503,7 @@ class DiveState(object):
 
                     self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = Segment_Number_Start_of_Ascent
-                    starting_depth = self.Depth_Change[0]
+                    starting_depth = Depth_Change[0]
                     ending_depth = 0.0
                     self.gas_loadings_ascent_descent(starting_depth, ending_depth, rate)
 
@@ -1538,8 +1541,8 @@ class DiveState(object):
 
                     if Number_of_Changes > 1:
                         for i in range(1, Number_of_Changes):
-                            if self.Depth_Change[i] >= Deco_Stop_Depth:
-                                self.Mix_Number = self.Mix_Change[i]
+                            if Depth_Change[i] >= Deco_Stop_Depth:
+                                self.Mix_Number = Mix_Change[i]
                                 rate = rate_Change[i]
                                 Step_Size = Step_Size_Change[i]
 
@@ -1602,8 +1605,8 @@ class DiveState(object):
                 # END calc_surface_phase_volume_time
 
                 for i in COMPARTMENT_RANGE:
-                    self.Phase_Volume_Time[i] = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
-                    Critical_Volume_Comparison = abs(self.Phase_Volume_Time[i] - self.Last_Phase_Volume_Time[i])
+                    Phase_Volume_Time[i] = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
+                    Critical_Volume_Comparison = abs(Phase_Volume_Time[i] - Last_Phase_Volume_Time[i])
                     if Critical_Volume_Comparison <= 1.0:
                         Schedule_Converged = True
 
@@ -1635,8 +1638,8 @@ class DiveState(object):
 
                     self.Run_Time = Run_Time_Start_of_Ascent
                     self.Segment_Number = Segment_Number_Start_of_Ascent
-                    starting_depth = self.Depth_Change[0]
-                    self.Mix_Number = self.Mix_Change[0]
+                    starting_depth = Depth_Change[0]
+                    self.Mix_Number = Mix_Change[0]
                     rate = rate_Change[0]
                     Step_Size = Step_Size_Change[0]
                     Deco_Stop_Depth = First_Stop_Depth
@@ -1697,8 +1700,8 @@ class DiveState(object):
 
                         if Number_of_Changes > 1:
                             for i in range(1, Number_of_Changes):
-                                if self.Depth_Change[i] >= Deco_Stop_Depth:
-                                    self.Mix_Number = self.Mix_Change[i]
+                                if Depth_Change[i] >= Deco_Stop_Depth:
+                                    self.Mix_Number = Mix_Change[i]
                                     rate = rate_Change[i]
                                     Step_Size = Step_Size_Change[i]
 
@@ -1757,8 +1760,8 @@ class DiveState(object):
                         phase_volume_time = Deco_Phase_Volume_Time + self.Surface_Phase_Volume_Time[i]
 
                         # Helium Calculations
-                        adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-                        initial_allowable_grad_he_pa = (self.Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                        adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                        initial_allowable_grad_he_pa = (Initial_Allowable_Gradient_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
                         B = initial_allowable_grad_he_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
 
@@ -1769,9 +1772,9 @@ class DiveState(object):
                         self.Allowable_Gradient_He[i] = (new_allowable_grad_he_pascals / ATM) * self.settings_values.Units.toUnitsFactor()
 
                         # Nitrogen Calculations
-                        adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                        adj_crush_pressure_n2_pascals = (Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                        initial_allowable_grad_n2_pa = (self.Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                        initial_allowable_grad_n2_pa = (Initial_Allowable_Gradient_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
                         B = initial_allowable_grad_n2_pa + (parameter_lambda_pascals * self.settings_values.Surface_Tension_Gamma) / (self.settings_values.Skin_Compression_GammaC * phase_volume_time)
 
@@ -1786,11 +1789,11 @@ class DiveState(object):
                     Deco_Phase_Volume_Time = 0.0
                     self.Run_Time = Run_Time_Start_of_Deco_Zone
                     starting_depth = Depth_Start_of_Deco_Zone
-                    self.Mix_Number = self.Mix_Change[0]
+                    self.Mix_Number = Mix_Change[0]
                     rate = rate_Change[0]
                     Step_Size = Step_Size_Change[0]
                     for i in COMPARTMENT_RANGE:
-                        self.Last_Phase_Volume_Time[i] = self.Phase_Volume_Time[i]
+                        Last_Phase_Volume_Time[i] = Phase_Volume_Time[i]
                         self.Helium_Pressure[i] = self.He_Pressure_Start_of_Deco_Zone[i]
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Deco_Zone[i]
                     continue
@@ -1830,10 +1833,10 @@ class DiveState(object):
                 for i in COMPARTMENT_RANGE:
                     max_actual_gradient_pascals = (self.Max_Actual_Gradient[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                    adj_crush_pressure_he_pascals = (self.Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
-                    adj_crush_pressure_n2_pascals = (self.Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                    adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / self.settings_values.Units.toUnitsFactor()) * ATM
+                    adj_crush_pressure_n2_pascals = (Adjusted_Crushing_Pressure_N2[i] / self.settings_values.Units.toUnitsFactor()) * ATM
 
-                    if self.Max_Actual_Gradient[i] > self.Initial_Allowable_Gradient_N2[i]:
+                    if self.Max_Actual_Gradient[i] > Initial_Allowable_Gradient_N2[i]:
                         new_critical_radius_n2 = self._new_critical_radius(max_actual_gradient_pascals, adj_crush_pressure_n2_pascals)
 
                         self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i] + (self.Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
@@ -1841,7 +1844,7 @@ class DiveState(object):
                     else:
                         self.Adjusted_Critical_Radius_N2[i] = self.Initial_Critical_Radius_N2[i]
 
-                    if self.Max_Actual_Gradient[i] > self.Initial_Allowable_Gradient_He[i]:
+                    if self.Max_Actual_Gradient[i] > Initial_Allowable_Gradient_He[i]:
                         new_critical_radius_he = self._new_critical_radius(max_actual_gradient_pascals, adj_crush_pressure_he_pascals)
 
                         self.Adjusted_Critical_Radius_He[i] = self.Initial_Critical_Radius_He[i] + (self.Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-dive.surface_interval_time_minutes / self.settings_values.Regeneration_Time_Constant)
