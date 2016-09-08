@@ -291,9 +291,6 @@ class DiveState(object):
 
     def _new_critical_radius(self, max_actual_gradient_pascals, adj_crush_pressure_pascals):
         """Calculates the new radius for the `VPM_REPETITIVE_ALGORITHM`
-
-        Side Effects: None
-        Returns: A floating point value
         """
         return ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma))) / (max_actual_gradient_pascals * self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma * adj_crush_pressure_pascals)
 
@@ -303,17 +300,6 @@ class DiveState(object):
          Purpose: This subprogram applies the Schreiner equation to update the
          gas loadings (partial pressures of helium and nitrogen) in the half-time
          compartments due to a linear ascent or descent segment at a constant rate.
-
-         Side Effects: Sets `self.Segment_Time`,
-         `self.Ending_Ambient_Pressure`,
-         `self.Helium_Pressure`,
-         `self.Initial_Helium_Pressure`,
-         `self.Initial_Nitrogen_Pressure`,
-         `self.Nitrogen_Pressure`
-         `self.Run_Time`,
-         `self.Segment_Number`,
-
-         Returns: None
          """
         self.Segment_Time = float(ending_depth - starting_depth) / rate
 
@@ -337,10 +323,6 @@ class DiveState(object):
 
     def _crushing_pressure_helper(self, radius_onset_of_imperm_molecule, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa):
         """Calculate the crushing pressure for a molecule(He or N2) (a helper for CALC_CRUSHING_PRESSURE)
-
-        Side Effects: None
-
-        Returns: A floating point value
         """
 
         A = ending_ambient_pressure_pa - amb_press_onset_of_imperm_pa + gas_tension_onset_of_imperm_pa + (2.0 * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / radius_onset_of_imperm_molecule
@@ -360,10 +342,6 @@ class DiveState(object):
 
     def _calculate_deco_gradient(self, allowable_gradient_molecule, amb_press_first_stop_pascals, amb_press_next_stop_pascals):
         """Calculates the decompression gradient for Boyles_Law_Compensation.
-
-        Side Effects: None
-
-        Returns: A floating point value
         """
 
         allow_grad_first_stop_pa = (allowable_gradient_molecule / self.settings_values.Units.toUnitsFactor()) * ATM
@@ -386,12 +364,6 @@ class DiveState(object):
         Purpose: This subprogram calculates the reduction in allowable gradients
         with decreasing ambient pressure during the decompression profile based
         on Boyle's Law considerations.
-
-        Side Effects: Sets
-        `self.Deco_Gradient_He`,
-        `self.Deco_Gradient_N2`
-
-        Returns: None
         """
 
         next_stop = deco_stop_depth - step_size
@@ -412,20 +384,6 @@ class DiveState(object):
         """
         Purpose: This subprogram calculates the required time at each
         decompression stop.
-
-        Side Effects: Sets
-        `self.Ending_Ambient_Pressure`,
-        `self.Helium_Pressure`,
-        `self.Nitrogen_Pressure`
-        `self.Run_Time`,
-        `self.Segment_Number`,
-        `self.Segment_Time`,
-
-        or
-
-        Raises an OffGassingException
-
-        Returns: None
         """
 
         last_run_time = self.Run_Time
@@ -1869,14 +1827,6 @@ def radius_root_finder(A, B, C, low_bound, high_bound):
     take the solution out of bounds, or whenever Newton-Raphson is not
     converging fast enough.  Source:  "Numerical Recipes in Fortran 77",
     Cambridge University Press, 1992.
-
-    Side Effects: None
-
-    or
-
-    Raises a RootException, MaxIterationException
-
-    Returns: A floating point value
     """
     # BEGIN CALCULATIONS BY MAKING SURE THAT THE ROOT LIES WITHIN BOUNDS
     # In this case we are solving for radius in a cubic equation of the form,
@@ -1966,10 +1916,6 @@ def calc_barometric_pressure(altitude, units_fsw):
     the National Geophysical Data Center of the National Oceanic and
     Atmospheric Administration.  It is available for download free from
     Public Domain Aeronautical Software at:  http://www.pdas.com/atmos.htm
-
-    Side Effects: None
-
-    Returns: A floating point value
     """
 
     radius_of_earth = 6369.0  # kilometers
@@ -2005,10 +1951,6 @@ def parse_settings():
     Purpose:
     Use OptParse to parse the command line switches and return the
     'options' and 'args' objects
-
-    Side Effects: None
-
-    Returns: `options` and `args` objects containg the command line arguments
     """
 
     # Load settings and inputs
