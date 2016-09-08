@@ -241,11 +241,6 @@ class DiveState(object):
     def __init__(self):
         """Set default values"""
 
-        # init the instance variables
-        # integers
-        self.Number_of_Changes = 0
-        self.Segment_Number_Start_of_Ascent = 0
-
         # floats
         self.Regenerated_Radius_He = [0.0] * ARRAY_LENGTH
         self.Regenerated_Radius_N2 = [0.0] * ARRAY_LENGTH
@@ -562,9 +557,6 @@ class DiveState(object):
             break
 
         self.Segment_Time = temp_segment_time
-
-
-
 
     def main(self):
         """
@@ -1171,20 +1163,22 @@ class DiveState(object):
                 self.N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
 
             Run_Time_Start_of_Ascent = self.Run_Time
-            self.Segment_Number_Start_of_Ascent = self.Segment_Number
+            Segment_Number_Start_of_Ascent = self.Segment_Number
 
             #     INPUT PARAMETERS TO BE USED FOR STAGED DECOMPRESSION AND SAVE IN ARRAYS.
             #     ASSIGN INITIAL PARAMETERS TO BE USED AT START OF ASCENT
             #     The user has the ability to change mix, ascent rate, and step size in any
             #     combination at any depth during the ascent.
 
+            Number_of_Changes = 0
+
             for profile in dive.profile_codes:
                 if profile.profile_code == ProfileCode.Ascent:
-                    self.Number_of_Changes = profile.number_of_ascent_parameter_changes
-                    self.Depth_Change = [0.0] * self.Number_of_Changes
-                    self.Mix_Change = [0.0] * self.Number_of_Changes
-                    rate_Change = [0.0] * self.Number_of_Changes
-                    Step_Size_Change = [0.0] * self.Number_of_Changes
+                    Number_of_Changes = profile.number_of_ascent_parameter_changes
+                    self.Depth_Change = [0.0] * Number_of_Changes
+                    self.Mix_Change = [0.0] * Number_of_Changes
+                    rate_Change = [0.0] * Number_of_Changes
+                    Step_Size_Change = [0.0] * Number_of_Changes
 
                     for i, ascents in enumerate(profile.ascent_summary):
                         self.Depth_Change[i] = ascents.starting_depth
@@ -1505,7 +1499,7 @@ class DiveState(object):
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
-                    self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                    self.Segment_Number = Segment_Number_Start_of_Ascent
                     starting_depth = self.Depth_Change[0]
                     ending_depth = 0.0
                     self.gas_loadings_ascent_descent(starting_depth, ending_depth, rate)
@@ -1542,8 +1536,8 @@ class DiveState(object):
                     if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                         break
 
-                    if self.Number_of_Changes > 1:
-                        for i in range(1, self.Number_of_Changes):
+                    if Number_of_Changes > 1:
+                        for i in range(1, Number_of_Changes):
                             if self.Depth_Change[i] >= Deco_Stop_Depth:
                                 self.Mix_Number = self.Mix_Change[i]
                                 rate = rate_Change[i]
@@ -1640,7 +1634,7 @@ class DiveState(object):
                         self.Nitrogen_Pressure[i] = self.N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
-                    self.Segment_Number = self.Segment_Number_Start_of_Ascent
+                    self.Segment_Number = Segment_Number_Start_of_Ascent
                     starting_depth = self.Depth_Change[0]
                     self.Mix_Number = self.Mix_Change[0]
                     rate = rate_Change[0]
@@ -1701,8 +1695,8 @@ class DiveState(object):
                         if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                             break
 
-                        if self.Number_of_Changes > 1:
-                            for i in range(1, self.Number_of_Changes):
+                        if Number_of_Changes > 1:
+                            for i in range(1, Number_of_Changes):
                                 if self.Depth_Change[i] >= Deco_Stop_Depth:
                                     self.Mix_Number = self.Mix_Change[i]
                                     rate = rate_Change[i]
