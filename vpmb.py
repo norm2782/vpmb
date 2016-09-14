@@ -625,20 +625,14 @@ class DiveState(object):
                     gradient_n2_bubble_formation = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma)) / (Initial_Critical_Radius_N2[i] * self.settings_values.Skin_Compression_GammaC))
 
                     if compartment_gradient_pascals > gradient_n2_bubble_formation:
-
                         new_critical_radius_n2 = ((2.0 * self.settings_values.Surface_Tension_Gamma * (self.settings_values.Skin_Compression_GammaC - self.settings_values.Surface_Tension_Gamma))) / (compartment_gradient_pascals * self.settings_values.Skin_Compression_GammaC)
-
                         Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
-
                         Initial_Critical_Radius_N2[i] = Adjusted_Critical_Radius_N2[i]
 
                     else:
                         ending_radius_n2 = 1.0 / (compartment_gradient_pascals / (2.0 * (self.settings_values.Surface_Tension_Gamma - self.settings_values.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_N2[i])
-
                         regenerated_radius_n2 = Initial_Critical_Radius_N2[i] + (ending_radius_n2 - Initial_Critical_Radius_N2[i]) * exp(-time_at_altitude_before_dive / self.settings_values.Regeneration_Time_Constant)
-
                         Initial_Critical_Radius_N2[i] = regenerated_radius_n2
-
                         Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
 
                 inspired_nitrogen_pressure = (self.Barometric_Pressure - self.settings_values.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
@@ -1396,7 +1390,9 @@ class DiveState(object):
                     initial_helium_pressure[i] = self.Helium_Pressure[i]
                     initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
 
-                while True:
+                keep_going = True
+                while keep_going:
+                    keep_going = False
                     ending_ambient_pressure = new_ambient_pressure
 
                     segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
@@ -1415,17 +1411,12 @@ class DiveState(object):
 
                         allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - self.settings_values.Constant_Pressure_Other_Gases
 
-                    end_sub = True # TODO Build this condition into the while
                     for j in COMPARTMENT_RANGE:
                         if temp_gas_loading[j] > allowable_gas_loading[j]:
                             new_ambient_pressure = ending_ambient_pressure + Step_Size
                             Deco_Stop_Depth = Deco_Stop_Depth + Step_Size
-                            end_sub = False
+                            keep_going = True
 
-                            break
-
-                    if end_sub:
-                        break
                 # END projected_ascent
 
                 if Deco_Stop_Depth > Depth_Start_of_Deco_Zone:
