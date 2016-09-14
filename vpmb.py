@@ -743,8 +743,8 @@ class DiveState(object):
                     rate = profile.rate
                     self.Mix_Number = profile.gasmix
 
-                    self.gas_loadings_ascent_descent(starting_depth, ending_depth, rate)
-                    if ending_depth > starting_depth:
+                    self.gas_loadings_ascent_descent(profile.starting_depth, ending_depth, rate)
+                    if ending_depth > profile.starting_depth:
                         # START calc_crushing_pressure
 
                         # Purpose: Compute the effective "crushing pressure" in each compartment as
@@ -790,7 +790,7 @@ class DiveState(object):
 
                         # Assign values of starting and ending ambient pressures for descent segment
 
-                        starting_ambient_pressure = starting_depth + self.Barometric_Pressure
+                        starting_ambient_pressure = profile.starting_depth + self.Barometric_Pressure
                         ending_ambient_pressure = ending_depth + self.Barometric_Pressure
 
                         # MAIN LOOP WITH NESTED DECISION TREE
@@ -955,15 +955,7 @@ class DiveState(object):
 
                         # END calc_crushing_pressure
 
-                    # the error seems unnecessary
-                    if ending_depth > starting_depth:
-                        word = 'Descent'
-                    elif starting_depth > ending_depth:
-                        word = 'Ascent '
-                    else:
-                        word = 'ERROR'
-
-                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, word, starting_depth, ending_depth, rate)
+                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.starting_depth, ending_depth, rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
                     self.Mix_Number = profile.gasmix

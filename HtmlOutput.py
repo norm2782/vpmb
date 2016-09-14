@@ -35,10 +35,18 @@ class HtmlOutput(object):
                 % (segment_number, segment_time, run_time, mix_number, depth)
         self.output[self.current_dive]["dive_profile"].append(split.split("|"))
 
-    def add_dive_profile_entry_descent(self, segment_number, segment_time, run_time, mix_number, word, starting_depth, ending_depth, rate):
+    def add_dive_profile_entry_descent(self, segment_number, segment_time, run_time, mix_number, starting_depth, ending_depth, rate):
         """Adds a new descent entry to the dive profile table"""
+        if ending_depth > starting_depth:
+            word = 'Descent'
+        elif starting_depth > ending_depth:
+            word = 'Ascent '
+        else:
+            word = 'ERROR'
+
         split = "%d|%6.1f |%6.1f | %d | %s | %6.1f| %6.1f| %6.1f| |" \
                 % (segment_number, segment_time, run_time, mix_number, word, starting_depth, ending_depth, rate)
+
         self.output[self.current_dive]["dive_profile"].append(split.split("|"))
 
     def add_decompression_profile_ascent(self, segment_number, segment_time, run_time, mix_number, deco_stop_depth, rate):
