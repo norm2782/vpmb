@@ -392,6 +392,10 @@ class DiveState(object):
 
             compartment_deco_ceiling = [0.0] * NUM_COMPARTMENTS
 
+            gas_loading = 0.0
+            tolerated_ambient_pressure = 0.0
+            weighted_allowable_gradient = 0.0
+
             for i in COMPARTMENT_RANGE:
                 gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
 
@@ -1212,59 +1216,13 @@ class DiveState(object):
             Schedule_Converged = False
 
             while True:
-                # CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
-                # GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
-                # SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
+                Ascent_Ceiling_Depth = calc_ascent_ceiling( self.Nitrogen_Pressure
+                                                          , self.Helium_Pressure
+                                                          , self.Allowable_Gradient_N2
+                                                          , self.Allowable_Gradient_He
+                                                          , self.Barometric_Pressure
+                                                          , settings)
 
-                # START CALC_ASCENT_CEILING
-
-                # Purpose: This subprogram calculates the ascent ceiling (the safe ascent
-                # depth) in each compartment, based on the allowable gradients, and then
-                # finds the deepest ascent ceiling across all compartments.
-
-                compartment_ascent_ceiling = [0.0] * NUM_COMPARTMENTS
-
-                # Since there are two sets of allowable gradients being tracked, one for
-                # helium and one for nitrogen, a "weighted allowable gradient" must be
-                # computed each time based on the proportions of helium and nitrogen in
-                # each compartment.  This proportioning follows the methodology of
-                # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
-                # such as after extended periods of oxygen breathing, then the minimum value
-                # across both gases will be used.  It is important to note that if a
-                # compartment is empty of helium and nitrogen, then the weighted allowable
-                # gradient formula cannot be used since it will result in division by zero.
-
-                for i in COMPARTMENT_RANGE:
-                    gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
-
-                    if gas_loading > 0.0:
-                        weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * self.Helium_Pressure[i] + self.Allowable_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
-                        tolerated_ambient_pressure = (gas_loading + settings.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
-
-                    else:
-                        weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
-                        tolerated_ambient_pressure = settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient
-
-                    #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
-                    #     the vacuum of outer space!
-                    if tolerated_ambient_pressure < 0.0:
-                        tolerated_ambient_pressure = 0.0
-
-                    #     The Ascent Ceiling Depth is computed in a loop after all of the individual
-                    #     compartment ascent ceilings have been calculated.  It is important that
-                    #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
-                    #     be extracted from the compartment values and not be compared against some
-                    #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
-                    #     compared against zero, this could cause a program lockup because sometimes
-                    #     the Ascent Ceiling Depth needs to be negative (but not less than zero
-                    #     absolute ambient pressure) in order to decompress to the last stop at zero
-                    #     depth.
-
-                    compartment_ascent_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
-
-                Ascent_Ceiling_Depth = max(compartment_ascent_ceiling)
-
-                # END CALC_ASCENT_CEILING
 
                 if Ascent_Ceiling_Depth <= 0.0:
                     Deco_Stop_Depth = 0.0
@@ -1688,6 +1646,52 @@ class DiveState(object):
                 self.Segment_Number = 0
 
 # functions
+
+# CALCULATE INITIAL ASCENT CEILING BASED ON ALLOWABLE SUPERSATURATION
+# GRADIENTS AND SET FIRST DECO STOP.  CHECK TO MAKE SURE THAT SELECTED STEP
+# SIZE WILL NOT ROUND UP FIRST STOP TO A DEPTH THAT IS BELOW THE DECO ZONE.
+
+# Purpose: This subprogram calculates the ascent ceiling (the safe ascent
+# depth) in each compartment, based on the allowable gradients, and then
+# finds the deepest ascent ceiling across all compartments.
+def calc_ascent_ceiling(helium_pressures, nitrogen_pressures, helium_gradients, nitrogen_gradients, barometric_pressure, settings):
+    def _ascent_ceiling_depth(t):
+        helium_pressure   = t[0]
+        nitrogen_pressure = t[1]
+        helium_gradient   = t[2]
+        nitrogen_gradient = t[3]
+
+        gas_loading = helium_pressure + nitrogen_pressure
+
+        if gas_loading > 0.0:
+            weighted_allowable_gradient = (helium_gradient * helium_pressure + nitrogen_gradient * nitrogen_pressure) / (helium_pressure + nitrogen_pressure)
+            tolerated_ambient_pressure = (gas_loading + settings.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
+
+        else:
+            weighted_allowable_gradient = min(helium_gradient, nitrogen_gradient)
+            tolerated_ambient_pressure = settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient
+
+        #     The tolerated ambient pressure cannot be less than zero absolute, i.e.,
+        #     the vacuum of outer space!
+        if tolerated_ambient_pressure < 0.0:
+            tolerated_ambient_pressure = 0.0
+
+        #     The Ascent Ceiling Depth is computed in a loop after all of the individual
+        #     compartment ascent ceilings have been calculated.  It is important that
+        #     the Ascent Ceiling Depth (max ascent ceiling across all compartments) only
+        #     be extracted from the compartment values and not be compared against some
+        #     initialization value.  For example, if MAX(Ascent_Ceiling_Depth . .) was
+        #     compared against zero, this could cause a program lockup because sometimes
+        #     the Ascent Ceiling Depth needs to be negative (but not less than zero
+        #     absolute ambient pressure) in order to decompress to the last stop at zero
+        #     depth.
+
+        return tolerated_ambient_pressure - barometric_pressure
+
+    return max(map(_ascent_ceiling_depth
+                  , zip(helium_pressures, nitrogen_pressures, helium_gradients, nitrogen_gradients)))
+
+
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):
     """Function for ascent and descent gas loading calculations"""
     return initial_inspired_gas_pressure + rate_change_insp_gas_pressure * (interval_time - 1.0 / gas_time_constant) - (initial_inspired_gas_pressure - initial_gas_pressure - rate_change_insp_gas_pressure / gas_time_constant) * exp(-gas_time_constant * interval_time)
