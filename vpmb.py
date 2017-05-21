@@ -421,76 +421,15 @@ class DiveState(object):
 
         if settings.Altitude_Dive_Algorithm:
             # START vpm_altitude_dive_algorithm
+            alt = vpm_altitude_dive_algorithm(self.altitude_values, Barometric_Pressure, settings)
+            self.Helium_Pressure        = alt[0]
+            self.Nitrogen_Pressure      = alt[1]
+            Initial_Critical_Radius_He  = alt[2]
+            Initial_Critical_Radius_N2  = alt[3]
+            Adjusted_Critical_Radius_He = alt[4]
+            Adjusted_Critical_Radius_N2 = alt[5]
 
-            # Purpose:  This subprogram updates gas loadings and adjusts critical radii
-            # (as required) based on whether or not diver is acclimatized at altitude or
-            # makes an ascent to altitude before the dive.
-
-            ascent_to_altitude_time = self.altitude_values.Ascent_to_Altitude_Hours * 60.0
-            time_at_altitude_before_dive = self.altitude_values.Hours_at_Altitude_Before_Dive * 60.0
-
-            if self.altitude_values.Diver_Acclimatized_at_Altitude:
-                self.Barometric_Pressure = calc_barometric_pressure(self.altitude_values.Altitude_of_Dive, settings.Units)
-
-                for i in COMPARTMENT_RANGE:
-                    Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
-                    Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
-                    self.Helium_Pressure[i] = 0.0
-                    self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-            else:
-                if (self.altitude_values.Starting_Acclimatized_Altitude >= self.altitude_values.Altitude_of_Dive) or (self.altitude_values.Starting_Acclimatized_Altitude < 0.0):
-                    raise AltitudeException("ERROR! STARTING ACCLIMATIZED ALTITUDE MUST BE LESS THAN ALTITUDE OF DIVE AND GREATER THAN OR EQUAL TO ZERO")
-
-                self.Barometric_Pressure = calc_barometric_pressure(self.altitude_values.Starting_Acclimatized_Altitude, settings.Units)
-
-                starting_ambient_pressure = self.Barometric_Pressure
-
-                for i in COMPARTMENT_RANGE:
-                    self.Helium_Pressure[i] = 0.0
-                    self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-
-                self.Barometric_Pressure = calc_barometric_pressure(self.altitude_values.Altitude_of_Dive, settings.Units)
-                ending_ambient_pressure = self.Barometric_Pressure
-                initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-                rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
-                nitrogen_rate = rate * SURFACE_FRACTION_INERT_GAS
-
-                for i in COMPARTMENT_RANGE:
-                    initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-                    self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
-                    compartment_gradient = (self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - ending_ambient_pressure
-                    compartment_gradient_pascals = (compartment_gradient / settings.Units.toUnitsFactor()) * ATM
-                    gradient_he_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_He[i] * settings.Skin_Compression_GammaC))
-
-                    if compartment_gradient_pascals > gradient_he_bubble_formation:
-                        new_critical_radius_he = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma))) / (compartment_gradient_pascals * settings.Skin_Compression_GammaC)
-                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
-                        Initial_Critical_Radius_He[i] = Adjusted_Critical_Radius_He[i]
-                    else:
-                        ending_radius_he = 1.0 / (compartment_gradient_pascals / (2.0 * (settings.Surface_Tension_Gamma - settings.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_He[i])
-                        regenerated_radius_he = Initial_Critical_Radius_He[i] + (ending_radius_he - Initial_Critical_Radius_He[i]) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
-                        Initial_Critical_Radius_He[i] = regenerated_radius_he
-                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
-
-                    gradient_n2_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_N2[i] * settings.Skin_Compression_GammaC))
-
-                    if compartment_gradient_pascals > gradient_n2_bubble_formation:
-                        new_critical_radius_n2 = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma))) / (compartment_gradient_pascals * settings.Skin_Compression_GammaC)
-                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
-                        Initial_Critical_Radius_N2[i] = Adjusted_Critical_Radius_N2[i]
-                    else:
-                        ending_radius_n2 = 1.0 / (compartment_gradient_pascals / (2.0 * (settings.Surface_Tension_Gamma - settings.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_N2[i])
-                        regenerated_radius_n2 = Initial_Critical_Radius_N2[i] + (ending_radius_n2 - Initial_Critical_Radius_N2[i]) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
-                        Initial_Critical_Radius_N2[i] = regenerated_radius_n2
-                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
-
-                inspired_nitrogen_pressure = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-
-                for i in COMPARTMENT_RANGE:
-                    initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-                    self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], time_at_altitude_before_dive)
-            # END vpm_altitude_dive_algorithm
+                        # END vpm_altitude_dive_algorithm
         else:
             self.Barometric_Pressure = calc_barometric_pressure(0.0, settings.Units)
 
@@ -1969,7 +1908,6 @@ def radius_root_finder(A, B, C, low_bound, high_bound):
 
     raise MaxIterationException('ERROR! ROOT SEARCH EXCEEDED MAXIMUM ITERATIONS')
 
-
 def calc_barometric_pressure(altitude, units_fsw):
     """
     Purpose: This function calculates barometric pressure at altitude based on the
@@ -2047,6 +1985,81 @@ def crushing_pressure_helper(settings, radius_onset_of_imperm_molecule, ending_a
     crushing_pressure_pascals = gradient_onset_of_imperm_pa + ending_ambient_pressure_pa - amb_press_onset_of_imperm_pa + gas_tension_onset_of_imperm_pa * (1.0 - radius_onset_of_imperm_molecule ** 3 / ending_radius ** 3)
 
     return (crushing_pressure_pascals / ATM) * settings.Units.toUnitsFactor()
+
+def vpm_altitude_dive_algorithm(altitude_values, Barometric_Pressure, settings):
+    # Purpose:  This subprogram updates gas loadings and adjusts critical radii
+    # (as required) based on whether or not diver is acclimatized at altitude or
+    # makes an ascent to altitude before the dive.
+
+    ascent_to_altitude_time = altitude_values.Ascent_to_Altitude_Hours * 60.0
+    time_at_altitude_before_dive = altitude_values.Hours_at_Altitude_Before_Dive * 60.0
+
+    if altitude_values.Diver_Acclimatized_at_Altitude:
+        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
+
+        for i in COMPARTMENT_RANGE:
+            Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
+            Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
+            self.Helium_Pressure[i] = 0.0
+            self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+    else:
+        if (altitude_values.Starting_Acclimatized_Altitude >= altitude_values.Altitude_of_Dive) or (altitude_values.Starting_Acclimatized_Altitude < 0.0):
+            raise AltitudeException("ERROR! STARTING ACCLIMATIZED ALTITUDE MUST BE LESS THAN ALTITUDE OF DIVE AND GREATER THAN OR EQUAL TO ZERO")
+
+        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Starting_Acclimatized_Altitude, settings.Units)
+
+        starting_ambient_pressure = self.Barometric_Pressure
+
+        for i in COMPARTMENT_RANGE:
+            self.Helium_Pressure[i] = 0.0
+            self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+
+        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
+        ending_ambient_pressure = self.Barometric_Pressure
+        initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+        rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
+        nitrogen_rate = rate * SURFACE_FRACTION_INERT_GAS
+
+        for i in COMPARTMENT_RANGE:
+            initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
+            self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
+            compartment_gradient = (self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - ending_ambient_pressure
+            compartment_gradient_pascals = (compartment_gradient / settings.Units.toUnitsFactor()) * ATM
+            gradient_he_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_He[i] * settings.Skin_Compression_GammaC))
+
+            if compartment_gradient_pascals > gradient_he_bubble_formation:
+                new_critical_radius_he = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma))) / (compartment_gradient_pascals * settings.Skin_Compression_GammaC)
+                Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
+                Initial_Critical_Radius_He[i] = Adjusted_Critical_Radius_He[i]
+            else:
+                ending_radius_he = 1.0 / (compartment_gradient_pascals / (2.0 * (settings.Surface_Tension_Gamma - settings.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_He[i])
+                regenerated_radius_he = Initial_Critical_Radius_He[i] + (ending_radius_he - Initial_Critical_Radius_He[i]) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
+                Initial_Critical_Radius_He[i] = regenerated_radius_he
+                Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
+
+            gradient_n2_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_N2[i] * settings.Skin_Compression_GammaC))
+
+            if compartment_gradient_pascals > gradient_n2_bubble_formation:
+                new_critical_radius_n2 = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma))) / (compartment_gradient_pascals * settings.Skin_Compression_GammaC)
+                Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
+                Initial_Critical_Radius_N2[i] = Adjusted_Critical_Radius_N2[i]
+            else:
+                ending_radius_n2 = 1.0 / (compartment_gradient_pascals / (2.0 * (settings.Surface_Tension_Gamma - settings.Skin_Compression_GammaC)) + 1.0 / Initial_Critical_Radius_N2[i])
+                regenerated_radius_n2 = Initial_Critical_Radius_N2[i] + (ending_radius_n2 - Initial_Critical_Radius_N2[i]) * exp(-time_at_altitude_before_dive / settings.Regeneration_Time_Constant)
+                Initial_Critical_Radius_N2[i] = regenerated_radius_n2
+                Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
+
+        inspired_nitrogen_pressure = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+
+        for i in COMPARTMENT_RANGE:
+            initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
+
+            self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], time_at_altitude_before_dive)
+
+    return ( Helium_Pressure, Nitrogen_Pressure
+           , Initial_Critical_Radius_He, Initial_Critical_Radius_N2
+           , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+           )
 
 
 
