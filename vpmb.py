@@ -45,9 +45,6 @@ HELIUM_HALF_TIMES = [1.88, 3.02, 4.72, 6.99, 10.21, 14.48, 20.53, 29.11, 41.20
 NITROGEN_HALF_TIMES = [5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0
                       ,146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0]
 
-
-HELIUM_TIME_CONSTANTS = mkHeTimeConsts()
-
 def mkHeTimeConsts():
     consts = [0.0] * NUM_COMPARTMENTS
 
@@ -55,7 +52,17 @@ def mkHeTimeConsts():
         consts[i] = log(2.0) / HELIUM_HALF_TIMES[i]
 
     return consts
-            # self.Nitrogen_Time_Constant[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
+
+def mkN2TimeConsts():
+    consts = [0.0] * NUM_COMPARTMENTS
+
+    for i in COMPARTMENT_RANGE:
+        consts[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
+
+    return consts
+
+HELIUM_TIME_CONSTANTS = mkHeTimeConsts()
+NITROGEN_TIME_CONSTANTS = mkN2TimeConsts()
 
 
 class AltitudeException(Exception):
@@ -271,8 +278,8 @@ class DiveState(object):
         # GLOBAL ARRAYS
 
         # Float
-        self.Helium_Time_Constant = [0.0] * NUM_COMPARTMENTS
-        self.Nitrogen_Time_Constant = [0.0] * NUM_COMPARTMENTS
+        HELIUM_TIME_CONSTANTS = [0.0] * NUM_COMPARTMENTS
+        NITROGEN_TIME_CONSTANTS = [0.0] * NUM_COMPARTMENTS
 
         self.Helium_Pressure = [0.0] * NUM_COMPARTMENTS
         self.Nitrogen_Pressure = [0.0] * NUM_COMPARTMENTS
@@ -333,8 +340,8 @@ class DiveState(object):
             for i in COMPARTMENT_RANGE:
                 initial_helium_pressure = self.Helium_Pressure[i]
                 initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-                self.Helium_Pressure[i] = haldane_equation(initial_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], self.Segment_Time)
-                self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
+                self.Helium_Pressure[i] = haldane_equation(initial_helium_pressure, inspired_helium_pressure, HELIUM_TIME_CONSTANTS[i], self.Segment_Time)
+                self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], self.Segment_Time)
 
             deco_ceiling_depth = calc_deco_ceiling( self.Helium_Pressure, self.Nitrogen_Pressure
                                                   , self.Deco_Gradient_He, self.Deco_Gradient_N2
@@ -401,8 +408,8 @@ class DiveState(object):
 
 
         for i in COMPARTMENT_RANGE:
-            self.Helium_Time_Constant[i] = log(2.0) / HELIUM_HALF_TIMES[i]
-            self.Nitrogen_Time_Constant[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
+            HELIUM_TIME_CONSTANTS[i] = log(2.0) / HELIUM_HALF_TIMES[i]
+            NITROGEN_TIME_CONSTANTS[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
             Initial_Critical_Radius_N2[i] = settings.Critical_Radius_N2_Microns * 1.0E-6
             Initial_Critical_Radius_He[i] = settings.Critical_Radius_He_Microns * 1.0E-6
 
@@ -456,7 +463,7 @@ class DiveState(object):
 
                 for i in COMPARTMENT_RANGE:
                     initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-                    self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+                    self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
                     compartment_gradient = (self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - ending_ambient_pressure
                     compartment_gradient_pascals = (compartment_gradient / settings.Units.toUnitsFactor()) * ATM
                     gradient_he_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_He[i] * settings.Skin_Compression_GammaC))
@@ -488,7 +495,7 @@ class DiveState(object):
                 for i in COMPARTMENT_RANGE:
                     initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
-                    self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], time_at_altitude_before_dive)
+                    self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], time_at_altitude_before_dive)
             # END vpm_altitude_dive_algorithm
         else:
             self.Barometric_Pressure = calc_barometric_pressure(0.0, settings.Units)
@@ -580,7 +587,7 @@ class DiveState(object):
                 if profile.profile_code == ProfileCode.Descent:
                     self.Mix_Number = profile.gasmix
 
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Helium_Time_Constant, self.Nitrogen_Time_Constant, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, profile.starting_depth, profile.ending_depth, profile.rate, self.Barometric_Pressure, self.Mix_Number, settings)
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, profile.starting_depth, profile.ending_depth, profile.rate, self.Barometric_Pressure, self.Mix_Number, settings)
 
                     self.Initial_Helium_Pressure = pressures[0]
                     self.Initial_Nitrogen_Pressure = pressures[1]
@@ -597,7 +604,6 @@ class DiveState(object):
                     if profile.ending_depth > profile.starting_depth:
                         pressure = calc_crushing_pressure( self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure
                                                          , self.Helium_Pressure, self.Nitrogen_Pressure
-                                                         , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                          , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
                                                          , Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
                                                          , Amb_Pressure_Onset_of_Imperm, Gas_Tension_Onset_of_Imperm
@@ -632,9 +638,9 @@ class DiveState(object):
                         temp_helium_pressure = self.Helium_Pressure[i]
                         temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
 
-                        self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], self.Segment_Time)
+                        self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, HELIUM_TIME_CONSTANTS[i], self.Segment_Time)
 
-                        self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
+                        self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], self.Segment_Time)
 
                     # END gas_loadings_constant_depth
 
@@ -800,7 +806,6 @@ class DiveState(object):
             Depth_Start_of_Deco_Zone = calc_start_of_deco_zone( self.Fraction_Helium[self.Mix_Number - 1]
                                                               , self.Fraction_Nitrogen[self.Mix_Number - 1]
                                                               , self.Helium_Pressure, self.Nitrogen_Pressure
-                                                              , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                               , starting_depth, self.Barometric_Pressure, rate, settings
                                                               )
 
@@ -830,7 +835,7 @@ class DiveState(object):
             #     released as a result of supersaturation gradients (not possible below the
             #     decompression zone).
 
-            pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Helium_Time_Constant, self.Nitrogen_Time_Constant, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Depth_Start_of_Deco_Zone, rate, self.Barometric_Pressure, self.Mix_Number, settings)
+            pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Depth_Start_of_Deco_Zone, rate, self.Barometric_Pressure, self.Mix_Number, settings)
             self.Initial_Helium_Pressure = pressures[0]
             self.Initial_Nitrogen_Pressure = pressures[1]
 
@@ -897,7 +902,6 @@ class DiveState(object):
 
                 Deco_Stop_Depth = projected_ascent( self.Fraction_Helium[self.Mix_Number - 1], self.Fraction_Nitrogen[self.Mix_Number - 1]
                                                   , self.Helium_Pressure, self.Nitrogen_Pressure
-                                                  , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                   , self.Allowable_Gradient_He, self.Allowable_Gradient_N2
                                                   , Deco_Stop_Depth, Depth_Start_of_Deco_Zone
                                                   , self.Barometric_Pressure, rate, settings
@@ -919,7 +923,7 @@ class DiveState(object):
                     self.Segment_Number = Segment_Number_Start_of_Ascent
                     starting_depth = Depth_Change[0]
                     ending_depth = 0.0
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Helium_Time_Constant, self.Nitrogen_Time_Constant, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, ending_depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, ending_depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
                     self.Initial_Helium_Pressure = pressures[0]
                     self.Initial_Nitrogen_Pressure = pressures[1]
 
@@ -958,7 +962,7 @@ class DiveState(object):
                 # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
 
                 while True:
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Helium_Time_Constant, self.Nitrogen_Time_Constant, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
 
                     self.Initial_Helium_Pressure = pressures[0]
                     self.Initial_Nitrogen_Pressure = pressures[1]
@@ -1010,7 +1014,6 @@ class DiveState(object):
                 Deco_Phase_Volume_Time = self.Run_Time - Run_Time_Start_of_Deco_Zone
 
                 Surface_Phase_Volume_Time = calc_surface_phase_volume_time( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                                          , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                                           , self.Barometric_Pressure, settings)
 
                 for i in COMPARTMENT_RANGE:
@@ -1057,7 +1060,7 @@ class DiveState(object):
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
                     while True:
-                        pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Helium_Time_Constant, self.Nitrogen_Time_Constant, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
+                        pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, self.Mix_Number, settings)
 
                         self.Initial_Helium_Pressure = pressures[0]
                         self.Initial_Nitrogen_Pressure = pressures[1]
@@ -1148,7 +1151,6 @@ class DiveState(object):
             # REPETITIVE LOOP AT LINE 30.
             if dive.repetitive_code:
                 load = gas_loadings_surface_interval( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                    , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                     , self.Barometric_Pressure, dive, settings)
                 self.Helium_Pressure   = load[0]
                 self.Nitrogen_Pressure = load[1]
@@ -1262,7 +1264,7 @@ def boyles_law_compensation(first_stop_depth, deco_stop_depth, step_size, allowa
     return (deco_gradients_he, deco_gradients_n2)
 
 
-def gas_loadings_ascent_descent(helium_pressure, nitrogen_pressure, helium_time_constant, nitrogen_time_constant, initial_helium_pressure, initial_nitrogen_pressure, fraction_helium, fraction_nitrogen, starting_depth, ending_depth, rate, barometric_pressure, mix_number, settings):
+def gas_loadings_ascent_descent(helium_pressure, nitrogen_pressure, initial_helium_pressure, initial_nitrogen_pressure, fraction_helium, fraction_nitrogen, starting_depth, ending_depth, rate, barometric_pressure, mix_number, settings):
     """
      Purpose: This subprogram applies the Schreiner equation to update the
      gas loadings (partial pressures of helium and nitrogen) in the half-time
@@ -1286,8 +1288,8 @@ def gas_loadings_ascent_descent(helium_pressure, nitrogen_pressure, helium_time_
         new_initial_helium_pressure[i]   = helium_pressure[i]
         new_initial_nitrogen_pressure[i] = nitrogen_pressure[i]
 
-        new_helium_pressure[i]   = schreiner_equation(initial_inspired_he_pressure, helium_rate,   segment_time, helium_time_constant[i],   helium_pressure[i])
-        new_nitrogen_pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, nitrogen_time_constant[i], nitrogen_pressure[i])
+        new_helium_pressure[i]   = schreiner_equation(initial_inspired_he_pressure, helium_rate,   segment_time, HELIUM_TIME_CONSTANTS[i],   helium_pressure[i])
+        new_nitrogen_pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, NITROGEN_TIME_CONSTANTS[i], nitrogen_pressure[i])
 
     return (new_initial_helium_pressure, new_initial_nitrogen_pressure, new_helium_pressure, new_nitrogen_pressure, segment_time)
 
@@ -1385,7 +1387,6 @@ def calc_deco_ceiling(helium_pressure, nitrogen_pressure, deco_gradient_he, deco
 
 
 def calc_surface_phase_volume_time( helium_pressure, nitrogen_pressure
-                                  , helium_time_constant, nitrogen_time_constant
                                   , barometric_pressure, settings):
   # Purpose: This subprogram computes the surface portion of the total phase
   # volume time.  This is the time factored out of the integration of
@@ -1403,10 +1404,10 @@ def calc_surface_phase_volume_time( helium_pressure, nitrogen_pressure
   surface_inspired_n2_pressure = (barometric_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
   for i in COMPARTMENT_RANGE:
       if nitrogen_pressure[i] > surface_inspired_n2_pressure:
-          Surface_Phase_Volume_Time[i] = (helium_pressure[i] / helium_time_constant[i] + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / nitrogen_time_constant[i]) / (helium_pressure[i] + nitrogen_pressure[i] - surface_inspired_n2_pressure)
+          Surface_Phase_Volume_Time[i] = (helium_pressure[i] / HELIUM_TIME_CONSTANTS[i] + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / NITROGEN_TIME_CONSTANTS[i]) / (helium_pressure[i] + nitrogen_pressure[i] - surface_inspired_n2_pressure)
       elif (nitrogen_pressure[i] <= surface_inspired_n2_pressure) and (helium_pressure[i] + nitrogen_pressure[i] >= surface_inspired_n2_pressure):
-          decay_time_to_zero_gradient = 1.0 / (nitrogen_time_constant[i] - helium_time_constant[i]) * log((surface_inspired_n2_pressure - nitrogen_pressure[i]) / helium_pressure[i])
-          integral_gradient_x_time = helium_pressure[i] / helium_time_constant[i] * (1.0 - exp(-helium_time_constant[i] * decay_time_to_zero_gradient)) + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / nitrogen_time_constant[i] * (1.0 - exp(-nitrogen_time_constant[i] * decay_time_to_zero_gradient))
+          decay_time_to_zero_gradient = 1.0 / (NITROGEN_TIME_CONSTANTS[i] - HELIUM_TIME_CONSTANTS[i]) * log((surface_inspired_n2_pressure - nitrogen_pressure[i]) / helium_pressure[i])
+          integral_gradient_x_time = helium_pressure[i] / HELIUM_TIME_CONSTANTS[i] * (1.0 - exp(-HELIUM_TIME_CONSTANTS[i] * decay_time_to_zero_gradient)) + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / NITROGEN_TIME_CONSTANTS[i] * (1.0 - exp(-NITROGEN_TIME_CONSTANTS[i] * decay_time_to_zero_gradient))
           Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (helium_pressure[i] + nitrogen_pressure[i] - surface_inspired_n2_pressure)
       else:
           Surface_Phase_Volume_Time[i] = 0.0
@@ -1416,7 +1417,7 @@ def calc_surface_phase_volume_time( helium_pressure, nitrogen_pressure
 def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
                            , fraction_helium, fraction_nitrogen
                            , initial_helium_pressure, initial_nitrogen_pressure
-                           , helium_time_constant, nitrogen_time_constant
+                           , HELIUM_TIME_CONSTANT, NITROGEN_TIME_CONSTANT
                            , profile, settings):
     # Purpose:  This subroutine uses the Bisection Method to find the ambient
     # pressure and gas tension at the onset of impermeability for a given
@@ -1453,9 +1454,9 @@ def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
 
     function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
 
-    high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, helium_time_constant, initial_helium_pressure)
+    high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, HELIUM_TIME_CONSTANT, initial_helium_pressure)
 
-    high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, nitrogen_time_constant, initial_nitrogen_pressure)
+    high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, NITROGEN_TIME_CONSTANT, initial_nitrogen_pressure)
 
     ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
 
@@ -1484,9 +1485,9 @@ def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
 
         mid_range_ambient_pressure = (starting_ambient_pressure + profile.rate * mid_range_time)
 
-        mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, helium_time_constant, initial_helium_pressure)
+        mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, HELIUM_TIME_CONSTANT, initial_helium_pressure)
 
-        mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, nitrogen_time_constant, initial_nitrogen_pressure)
+        mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, NITROGEN_TIME_CONSTANT, initial_nitrogen_pressure)
 
         gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
 
@@ -1504,7 +1505,6 @@ def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
 
 def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
                            , Helium_Pressure, Nitrogen_Pressure
-                           , Helium_Time_Constant, Nitrogen_Time_Constant
                            , starting_depth, barometric_pressure, rate
                            , settings
                            ):
@@ -1545,8 +1545,8 @@ def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
         initial_nitrogen_pressure = Nitrogen_Pressure[i]
 
         function_at_low_bound = initial_helium_pressure + initial_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - starting_ambient_pressure
-        high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, Helium_Time_Constant[i], initial_helium_pressure)
-        high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+        high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, HELIUM_TIME_CONSTANTS[i], initial_helium_pressure)
+        high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
         function_at_high_bound = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
 
         if (function_at_high_bound * function_at_low_bound) >= 0.0:
@@ -1570,8 +1570,8 @@ def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
             differential_change = last_diff_change * 0.5
 
             mid_range_time = time_to_start_of_deco_zone + differential_change
-            mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, Helium_Time_Constant[i], initial_helium_pressure)
-            mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+            mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, HELIUM_TIME_CONSTANTS[i], initial_helium_pressure)
+            mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
             function_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - (starting_ambient_pressure + rate * mid_range_time)
 
             if function_at_mid_range <= 0.0:
@@ -1597,7 +1597,6 @@ def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
 
 def calc_crushing_pressure( Initial_Helium_Pressure, Initial_Nitrogen_Pressure
                           , Helium_Pressure, Nitrogen_Pressure
-                          , Helium_Time_Constant, Nitrogen_Time_Constant
                           , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
                           , Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
                           , Amb_Pressure_Onset_of_Imperm, Gas_Tension_Onset_of_Imperm
@@ -1700,8 +1699,8 @@ def calc_crushing_pressure( Initial_Helium_Pressure, Initial_Nitrogen_Pressure
                                                , Fraction_Nitrogen
                                                , Initial_Helium_Pressure[i]
                                                , Initial_Nitrogen_Pressure[i]
-                                               , Helium_Time_Constant[i]
-                                               , Nitrogen_Time_Constant[i]
+                                               , HELIUM_TIME_CONSTANTS[i]
+                                               , NITROGEN_TIME_CONSTANTS[i]
                                                , profile, settings)
 
                 Amb_Pressure_Onset_of_Imperm[i] = onset[0] # mid_range_ambient_pressure
@@ -1780,7 +1779,6 @@ def critical_volume( Allowable_Gradient_He, Allowable_Gradient_N2
 
 def projected_ascent( Fraction_Helium, Fraction_Nitrogen
                     , Helium_Pressure, Nitrogen_Pressure
-                    , Helium_Time_Constant, Nitrogen_Time_Constant
                     , Allowable_Gradient_He, Allowable_Gradient_N2
                     , Deco_Stop_Depth, Depth_Start_of_Deco_Zone
                     , Barometric_Pressure, rate, settings):
@@ -1816,8 +1814,8 @@ def projected_ascent( Fraction_Helium, Fraction_Nitrogen
         segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
 
         for i in COMPARTMENT_RANGE:
-            temp_helium_pressure   = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, Helium_Time_Constant[i], initial_helium_pressure[i])
-            temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
+            temp_helium_pressure   = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, HELIUM_TIME_CONSTANTS[i], initial_helium_pressure[i])
+            temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure[i])
             temp_gas_loading[i]    = temp_helium_pressure + temp_nitrogen_pressure
 
             if temp_gas_loading[i] > 0.0:
@@ -1836,7 +1834,6 @@ def projected_ascent( Fraction_Helium, Fraction_Nitrogen
     return Deco_Stop_Depth
 
 def gas_loadings_surface_interval( Helium_Pressure, Nitrogen_Pressure
-                                 , Helium_Time_Constant, Nitrogen_Time_Constant
                                  , Barometric_Pressure, dive, settings):
     # START gas_loadings_surface_interval
 
@@ -1850,8 +1847,8 @@ def gas_loadings_surface_interval( Helium_Pressure, Nitrogen_Pressure
         temp_helium_pressure = Helium_Pressure[i]
         temp_nitrogen_pressure = Nitrogen_Pressure[i]
 
-        Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, Helium_Time_Constant[i], dive.surface_interval_time_minutes)
-        Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, Nitrogen_Time_Constant[i], dive.surface_interval_time_minutes)
+        Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, HELIUM_TIME_CONSTANTS[i], dive.surface_interval_time_minutes)
+        Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], dive.surface_interval_time_minutes)
 
     # END gas_loadings_surface_interval
     return (Helium_Pressure, Nitrogen_Pressure)
