@@ -883,58 +883,13 @@ class DiveState(object):
                 # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
                 # DECO ZONE.
 
-                # START projected_ascent
-
-                # Purpose: This subprogram performs a simulated ascent outside of the main
-                # program to ensure that a deco ceiling will not be violated due to unusual
-                # gas loading during ascent (on-gassing).  If the deco ceiling is violated,
-                # the stop depth will be adjusted deeper by the step size until a safe
-                # ascent can be made.
-
-                new_ambient_pressure = Deco_Stop_Depth + self.Barometric_Pressure
-                starting_ambient_pressure = Depth_Start_of_Deco_Zone + self.Barometric_Pressure
-
-                initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-                initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-                helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
-                nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-                temp_gas_loading = [0.0] * NUM_COMPARTMENTS
-                allowable_gas_loading = [0.0] * NUM_COMPARTMENTS
-                initial_helium_pressure = [0.0] * NUM_COMPARTMENTS
-                initial_nitrogen_pressure = [0.0] * NUM_COMPARTMENTS
-
-                for i in COMPARTMENT_RANGE:
-                    initial_helium_pressure[i]   = self.Helium_Pressure[i]
-                    initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
-
-                keep_going = True
-                while keep_going:
-                    keep_going = False
-                    ending_ambient_pressure = new_ambient_pressure
-
-                    segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
-
-                    for i in COMPARTMENT_RANGE:
-                        temp_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, self.Helium_Time_Constant[i], initial_helium_pressure[i])
-                        temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
-                        temp_gas_loading[i] = temp_helium_pressure + temp_nitrogen_pressure
-
-                        if temp_gas_loading[i] > 0.0:
-                            weighted_allowable_gradient = (self.Allowable_Gradient_He[i] * temp_helium_pressure + self.Allowable_Gradient_N2[i] * temp_nitrogen_pressure) / temp_gas_loading[i]
-                        else:
-                            weighted_allowable_gradient = min(self.Allowable_Gradient_He[i], self.Allowable_Gradient_N2[i])
-
-                        allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - settings.Constant_Pressure_Other_Gases
-
-                    for j in COMPARTMENT_RANGE:
-                        if temp_gas_loading[j] > allowable_gas_loading[j]:
-                            new_ambient_pressure = ending_ambient_pressure + Step_Size
-                            Deco_Stop_Depth = Deco_Stop_Depth + Step_Size
-                            keep_going = True
-
-                # END projected_ascent
+                Deco_Stop_Depth = projected_ascent( self.Fraction_Helium[self.Mix_Number - 1], self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                                  , self.Helium_Pressure, self.Nitrogen_Pressure
+                                                  , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
+                                                  , self.Allowable_Gradient_He, self.Allowable_Gradient_N2
+                                                  , Deco_Stop_Depth, Depth_Start_of_Deco_Zone
+                                                  , self.Barometric_Pressure, rate, settings
+                                                  )
 
                 if Deco_Stop_Depth > Depth_Start_of_Deco_Zone:
                     raise DecompressionStepException("ERROR! STEP SIZE IS TOO LARGE TO DECOMPRESS")
@@ -1180,22 +1135,11 @@ class DiveState(object):
             # ALGORITHM.  RE-INITIALIZE SELECTED VARIABLES AND RETURN TO START OF
             # REPETITIVE LOOP AT LINE 30.
             if dive.repetitive_code:
-                # START gas_loadings_surface_interval
-
-                # Purpose: This subprogram calculates the gas loading (off-gassing) during
-                # a surface interval.
-
-                inspired_helium_pressure = 0.0
-                inspired_nitrogen_pressure = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-
-                for i in COMPARTMENT_RANGE:
-                    temp_helium_pressure = self.Helium_Pressure[i]
-                    temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-                    self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], dive.surface_interval_time_minutes)
-                    self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], dive.surface_interval_time_minutes)
-
-                # END gas_loadings_surface_interval
+                load = gas_loadings_surface_interval( self.Helium_Pressure, self.Nitrogen_Pressure
+                                                    , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
+                                                    , self.Barometric_Pressure, dive, settings)
+                self.Helium_Pressure   = load[0]
+                self.Nitrogen_Pressure = load[1]
 
                 # START vpm_repetitive_algorithm
 
@@ -1821,6 +1765,84 @@ def critical_volume( Allowable_Gradient_He, Allowable_Gradient_N2
         Allowable_Gradient_N2[i] = (new_allowable_grad_n2_pascals / ATM) * settings.Units.toUnitsFactor()
 
     return (Allowable_Gradient_He, Allowable_Gradient_N2)
+
+def projected_ascent( Fraction_Helium, Fraction_Nitrogen
+                    , Helium_Pressure, Nitrogen_Pressure
+                    , Helium_Time_Constant, Nitrogen_Time_Constant
+                    , Allowable_Gradient_He, Allowable_Gradient_N2
+                    , Deco_Stop_Depth, Depth_Start_of_Deco_Zone
+                    , Barometric_Pressure, rate, settings):
+    # Purpose: This subprogram performs a simulated ascent outside of the main
+    # program to ensure that a deco ceiling will not be violated due to unusual
+    # gas loading during ascent (on-gassing).  If the deco ceiling is violated,
+    # the stop depth will be adjusted deeper by the step size until a safe
+    # ascent can be made.
+
+    new_ambient_pressure = Deco_Stop_Depth + Barometric_Pressure
+    starting_ambient_pressure = Depth_Start_of_Deco_Zone + Barometric_Pressure
+
+    initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Helium
+    initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Nitrogen
+
+    helium_rate = rate * Fraction_Helium
+    nitrogen_rate = rate * Fraction_Nitrogen
+
+    temp_gas_loading = [0.0] * NUM_COMPARTMENTS
+    allowable_gas_loading = [0.0] * NUM_COMPARTMENTS
+    initial_helium_pressure = [0.0] * NUM_COMPARTMENTS
+    initial_nitrogen_pressure = [0.0] * NUM_COMPARTMENTS
+
+    for i in COMPARTMENT_RANGE:
+        initial_helium_pressure[i]   = Helium_Pressure[i]
+        initial_nitrogen_pressure[i] = Nitrogen_Pressure[i]
+
+    keep_going = True
+    while keep_going:
+        keep_going = False
+        ending_ambient_pressure = new_ambient_pressure
+
+        segment_time = (ending_ambient_pressure - starting_ambient_pressure) / rate
+
+        for i in COMPARTMENT_RANGE:
+            temp_helium_pressure   = schreiner_equation(initial_inspired_he_pressure, helium_rate, segment_time, Helium_Time_Constant[i], initial_helium_pressure[i])
+            temp_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, Nitrogen_Time_Constant[i], initial_nitrogen_pressure[i])
+            temp_gas_loading[i]    = temp_helium_pressure + temp_nitrogen_pressure
+
+            if temp_gas_loading[i] > 0.0:
+                weighted_allowable_gradient = (Allowable_Gradient_He[i] * temp_helium_pressure + Allowable_Gradient_N2[i] * temp_nitrogen_pressure) / temp_gas_loading[i]
+            else:
+                weighted_allowable_gradient = min(Allowable_Gradient_He[i], Allowable_Gradient_N2[i])
+
+            allowable_gas_loading[i] = ending_ambient_pressure + weighted_allowable_gradient - settings.Constant_Pressure_Other_Gases
+
+        for j in COMPARTMENT_RANGE:
+            if temp_gas_loading[j] > allowable_gas_loading[j]:
+                new_ambient_pressure = ending_ambient_pressure + Step_Size
+                Deco_Stop_Depth = Deco_Stop_Depth + Step_Size
+                keep_going = True
+
+    return Deco_Stop_Depth
+
+def gas_loadings_surface_interval( Helium_Pressure, Nitrogen_Pressure
+                                 , Helium_Time_Constant, Nitrogen_Time_Constant
+                                 , Barometric_Pressure, dive, settings):
+    # START gas_loadings_surface_interval
+
+    # Purpose: This subprogram calculates the gas loading (off-gassing) during
+    # a surface interval.
+
+    inspired_helium_pressure = 0.0
+    inspired_nitrogen_pressure = (Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+
+    for i in COMPARTMENT_RANGE:
+        temp_helium_pressure = Helium_Pressure[i]
+        temp_nitrogen_pressure = Nitrogen_Pressure[i]
+
+        Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, Helium_Time_Constant[i], dive.surface_interval_time_minutes)
+        Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, Nitrogen_Time_Constant[i], dive.surface_interval_time_minutes)
+
+    # END gas_loadings_surface_interval
+    return (Helium_Pressure, Nitrogen_Pressure)
 
 
 
