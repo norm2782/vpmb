@@ -677,92 +677,17 @@ class DiveState(object):
                                 # In most cases, a subroutine will be called to find these values using a
                                 # numerical method.
                                 if starting_gradient < gradient_onset_of_imperm:
-                                    # START onset_of_impermeability
+                                    onset = onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
+                                                                   , self.Fraction_Helium[self.Mix_Number - 1]
+                                                                   , self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                                                   , self.Initial_Helium_Pressure[i]
+                                                                   , self.Initial_Nitrogen_Pressure[i]
+                                                                   , self.Helium_Time_Constant[i]
+                                                                   , self.Nitrogen_Time_Constant[i]
+                                                                   , profile, settings)
 
-                                    # Purpose:  This subroutine uses the Bisection Method to find the ambient
-                                    # pressure and gas tension at the onset of impermeability for a given
-                                    # compartment.  Source:  "Numerical Recipes in Fortran 77",
-                                    # Cambridge University Press, 1992.
-
-                                    # First convert the Gradient for Onset of Impermeability to the diving
-                                    # pressure units that are being used
-
-                                    gradient_onset_of_imperm = settings.Gradient_Onset_of_Imperm_Atm * settings.Units.toUnitsFactor()
-
-                                    # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
-                                    # In this case, we are solving for time - the time when the ambient pressure
-                                    # minus the gas tension will be equal to the Gradient for Onset of
-                                    # Impermeability.  The low bound for time is set at zero and the high
-                                    # bound is set at the elapsed time (segment time) it took to go from the
-                                    # starting ambient pressure to the ending ambient pressure.  The desired
-                                    # ambient pressure and gas tension at the onset of impermeability will
-                                    # be found somewhere between these endpoints.  The algorithm checks to
-                                    # make sure that the solution lies in between these bounds by first
-                                    # computing the low bound and high bound function values.
-
-                                    initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-                                    initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-                                    helium_rate = profile.rate * self.Fraction_Helium[self.Mix_Number - 1]
-                                    nitrogen_rate = profile.rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-                                    low_bound = 0.0
-
-                                    high_bound = (ending_ambient_pressure - starting_ambient_pressure) / profile.rate
-
-                                    starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases
-
-                                    function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
-
-                                    high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-                                    high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-                                    ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
-
-                                    function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
-
-                                    if(function_at_high_bound * function_at_low_bound) >= 0.0:
-                                        raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
-
-                                    # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
-                                    # THE DESIRED ACCURACY IS FOUND
-                                    # Note: the program allows for up to 100 iterations.  Normally an exit will
-                                    # be made from the loop well before that number.  If, for some reason, the
-                                    # program exceeds 100 iterations, there will be a pause to alert the user.
-
-                                    if function_at_low_bound < 0.0:
-                                        time = low_bound
-                                        differential_change = high_bound - low_bound
-                                    else:
-                                        time = high_bound
-                                        differential_change = low_bound - high_bound
-
-                                    for j in range(100):
-                                        last_diff_change = differential_change
-                                        differential_change = last_diff_change * 0.5
-                                        mid_range_time = time + differential_change
-
-                                        mid_range_ambient_pressure = (starting_ambient_pressure + profile.rate * mid_range_time)
-
-                                        mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], self.Initial_Helium_Pressure[i])
-
-                                        mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
-
-                                        gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
-
-                                        function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
-
-                                        if function_at_mid_range <= 0.0:
-                                            time = mid_range_time
-
-                                        # When a solution with the desired accuracy is found, the program breaks
-                                        if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
-                                            break
-
-                                    Amb_Pressure_Onset_of_Imperm[i] = mid_range_ambient_pressure
-                                    Gas_Tension_Onset_of_Imperm[i] = gas_tension_at_mid_range
-                                    # END onset_of_impermeability
+                                    Amb_Pressure_Onset_of_Imperm[i] = onset[0] # mid_range_ambient_pressure
+                                    Gas_Tension_Onset_of_Imperm[i]  = onset[1] # gas_tension_at_mid_range
 
                                 # Next, using the values for ambient pressure and gas tension at the onset
                                 # of impermeability, the equations are set up to process the calculations
@@ -1768,6 +1693,95 @@ def calc_surface_phase_volume_time( helium_pressure, nitrogen_pressure
           Surface_Phase_Volume_Time[i] = 0.0
 
   return Surface_Phase_Volume_Time
+
+def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
+                           , fraction_helium, fraction_nitrogen
+                           , initial_helium_pressure, initial_nitrogen_pressure
+                           , helium_time_constant, nitrogen_time_constant
+                           , profile, settings):
+    # Purpose:  This subroutine uses the Bisection Method to find the ambient
+    # pressure and gas tension at the onset of impermeability for a given
+    # compartment.  Source:  "Numerical Recipes in Fortran 77",
+    # Cambridge University Press, 1992.
+
+    # First convert the Gradient for Onset of Impermeability to the diving
+    # pressure units that are being used
+
+    gradient_onset_of_imperm = settings.Gradient_Onset_of_Imperm_Atm * settings.Units.toUnitsFactor()
+
+    # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
+    # In this case, we are solving for time - the time when the ambient pressure
+    # minus the gas tension will be equal to the Gradient for Onset of
+    # Impermeability.  The low bound for time is set at zero and the high
+    # bound is set at the elapsed time (segment time) it took to go from the
+    # starting ambient pressure to the ending ambient pressure.  The desired
+    # ambient pressure and gas tension at the onset of impermeability will
+    # be found somewhere between these endpoints.  The algorithm checks to
+    # make sure that the solution lies in between these bounds by first
+    # computing the low bound and high bound function values.
+
+    initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * fraction_helium
+
+    initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * fraction_nitrogen
+
+    helium_rate = profile.rate * fraction_helium
+    nitrogen_rate = profile.rate *  fraction_nitrogen
+    low_bound = 0.0
+
+    high_bound = (ending_ambient_pressure - starting_ambient_pressure) / profile.rate
+
+    starting_gas_tension = initial_helium_pressure + initial_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
+
+    function_at_low_bound = starting_ambient_pressure - starting_gas_tension - gradient_onset_of_imperm
+
+    high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, helium_time_constant, initial_helium_pressure)
+
+    high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, nitrogen_time_constant, initial_nitrogen_pressure)
+
+    ending_gas_tension = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
+
+    function_at_high_bound = ending_ambient_pressure - ending_gas_tension - gradient_onset_of_imperm
+
+    if(function_at_high_bound * function_at_low_bound) >= 0.0:
+        raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
+
+    # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
+    # THE DESIRED ACCURACY IS FOUND
+    # Note: the program allows for up to 100 iterations.  Normally an exit will
+    # be made from the loop well before that number.  If, for some reason, the
+    # program exceeds 100 iterations, there will be a pause to alert the user.
+
+    if function_at_low_bound < 0.0:
+        time = low_bound
+        differential_change = high_bound - low_bound
+    else:
+        time = high_bound
+        differential_change = low_bound - high_bound
+
+    for j in range(100):
+        last_diff_change = differential_change
+        differential_change = last_diff_change * 0.5
+        mid_range_time = time + differential_change
+
+        mid_range_ambient_pressure = (starting_ambient_pressure + profile.rate * mid_range_time)
+
+        mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, helium_time_constant, initial_helium_pressure)
+
+        mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, nitrogen_time_constant, initial_nitrogen_pressure)
+
+        gas_tension_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
+
+        function_at_mid_range = mid_range_ambient_pressure - gas_tension_at_mid_range - gradient_onset_of_imperm
+
+        if function_at_mid_range <= 0.0:
+            time = mid_range_time
+
+        # When a solution with the desired accuracy is found, the program breaks
+        if (abs(differential_change) < 1.0E-3) or (function_at_mid_range == 0.0):
+            break
+
+    return (mid_range_ambient_pressure, gas_tension_at_mid_range)
+
 
 
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):
