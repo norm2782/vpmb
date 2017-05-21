@@ -1461,45 +1461,7 @@ class DiveState(object):
                         self.Run_Time += pressures[4]
                         self.Segment_Number += 1
 
-                        # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
-                        # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
-                        # If there is a repetitive dive, this will be used later in the VPM
-                        # Repetitive Algorithm to adjust the values for critical radii.
-
-                        # START self.calc_max_actual_gradient
-
-                        # Purpose: This subprogram calculates the actual supersaturation gradient
-                        # obtained in each compartment as a result of the ascent profile during
-                        # decompression.  Similar to the concept with crushing pressure, the
-                        # supersaturation gradients are not cumulative over a multi-level, staged
-                        # ascent.  Rather, it will be the maximum value obtained in any one discrete
-                        # step of the overall ascent.  Thus, the program must compute and store the
-                        # maximum actual gradient for each compartment that was obtained across all
-                        # steps of the ascent profile.  This subroutine is invoked on the last pass
-                        # through the deco stop loop block when the final deco schedule is being
-                        # generated.
-
-                        # The max actual gradients are later used by the VPM Repetitive Algorithm to
-                        # determine if adjustments to the critical radii are required.  If the max
-                        # actual gradient did not exceed the initial allowable gradient, then no
-                        # adjustment will be made.  However, if the max actual gradient did exceed
-                        # the initial allowable gradient, such as permitted by the Critical Volume
-                        # Algorithm, then the critical radius will be adjusted (made larger) on the
-                        # repetitive dive to compensate for the bubbling that was allowed on the
-                        # previous dive.  The use of the max actual gradients is intended to prevent
-                        # the repetitive algorithm from being overly conservative.
-
-                        # Note: negative supersaturation gradients are meaningless for this
-                        # application, so the values must be equal to or greater than zero.
-
-                        for i in COMPARTMENT_RANGE:
-                            compartment_gradient = (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - (Deco_Stop_Depth + self.Barometric_Pressure)
-                            if compartment_gradient <= 0.0:
-                                compartment_gradient = 0.0
-
-                            Max_Actual_Gradient[i] = max(Max_Actual_Gradient[i], compartment_gradient)
-
-                        # END self.calc_max_actual_gradient
+                        Max_Actual_Gradient = calc_max_actual_gradient(Max_Actual_Gradient, Deco_Stop_Depth, self.Helium_Pressure, self.Nitrogen_Pressure, self.Barometric_Pressure, settings)
 
                         self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, Deco_Stop_Depth, rate)
                         if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
@@ -1761,6 +1723,49 @@ def gas_loadings_ascent_descent(helium_pressure, nitrogen_pressure, helium_time_
         new_nitrogen_pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, segment_time, nitrogen_time_constant[i], nitrogen_pressure[i])
 
     return (new_initial_helium_pressure, new_initial_nitrogen_pressure, new_helium_pressure, new_nitrogen_pressure, segment_time)
+
+def calc_max_actual_gradient(max_actual_gradient, deco_stop_depth, helium_pressure, nitrogen_pressure, barometric_pressure, settings):
+  # DURING FINAL DECOMPRESSION SCHEDULE PROCESS, COMPUTE MAXIMUM ACTUAL
+  # SUPERSATURATION GRADIENT RESULTING IN EACH COMPARTMENT
+  # If there is a repetitive dive, this will be used later in the VPM
+  # Repetitive Algorithm to adjust the values for critical radii.
+
+  # START self.calc_max_actual_gradient
+
+  # Purpose: This subprogram calculates the actual supersaturation gradient
+  # obtained in each compartment as a result of the ascent profile during
+  # decompression.  Similar to the concept with crushing pressure, the
+  # supersaturation gradients are not cumulative over a multi-level, staged
+  # ascent.  Rather, it will be the maximum value obtained in any one discrete
+  # step of the overall ascent.  Thus, the program must compute and store the
+  # maximum actual gradient for each compartment that was obtained across all
+  # steps of the ascent profile.  This subroutine is invoked on the last pass
+  # through the deco stop loop block when the final deco schedule is being
+  # generated.
+
+  # The max actual gradients are later used by the VPM Repetitive Algorithm to
+  # determine if adjustments to the critical radii are required.  If the max
+  # actual gradient did not exceed the initial allowable gradient, then no
+  # adjustment will be made.  However, if the max actual gradient did exceed
+  # the initial allowable gradient, such as permitted by the Critical Volume
+  # Algorithm, then the critical radius will be adjusted (made larger) on the
+  # repetitive dive to compensate for the bubbling that was allowed on the
+  # previous dive.  The use of the max actual gradients is intended to prevent
+  # the repetitive algorithm from being overly conservative.
+
+  # Note: negative supersaturation gradients are meaningless for this
+  # application, so the values must be equal to or greater than zero.
+
+  for i in COMPARTMENT_RANGE:
+      compartment_gradient = (helium_pressure[i] + nitrogen_pressure[i] + settings.Constant_Pressure_Other_Gases) - (deco_stop_depth + barometric_pressure)
+      if compartment_gradient <= 0.0:
+          compartment_gradient = 0.0
+
+      max_actual_gradient[i] = max(max_actual_gradient[i], compartment_gradient)
+
+  return max_actual_gradient
+
+
 
 
 
