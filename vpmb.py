@@ -394,7 +394,6 @@ class DiveState(object):
             Max_Crushing_Pressure_He[i] = 0.0
             Max_Crushing_Pressure_N2[i] = 0.0
             Max_Actual_Gradient[i] = 0.0
-            Surface_Phase_Volume_Time[i] = 0.0
             Amb_Pressure_Onset_of_Imperm[i] = 0.0
             Gas_Tension_Onset_of_Imperm[i] = 0.0
             Initial_Critical_Radius_N2[i] = settings.Critical_Radius_N2_Microns * 1.0E-6
