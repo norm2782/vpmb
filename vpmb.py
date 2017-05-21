@@ -420,16 +420,17 @@ class DiveState(object):
         Adjusted_Critical_Radius_N2 = [0.0] * NUM_COMPARTMENTS
 
         if settings.Altitude_Dive_Algorithm:
-            # START vpm_altitude_dive_algorithm
-            alt = vpm_altitude_dive_algorithm(self.altitude_values, Barometric_Pressure, settings)
+            alt = vpm_altitude_dive_algorithm( self.Helium_Pressure, self.Nitrogen_Pressure
+                                             , Initial_Critical_Radius_He, Initial_Critical_Radius_N2
+                                             , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                                             , self.altitude_values, settings)
             self.Helium_Pressure        = alt[0]
             self.Nitrogen_Pressure      = alt[1]
             Initial_Critical_Radius_He  = alt[2]
             Initial_Critical_Radius_N2  = alt[3]
             Adjusted_Critical_Radius_He = alt[4]
             Adjusted_Critical_Radius_N2 = alt[5]
-
-                        # END vpm_altitude_dive_algorithm
+            self.Barometric_Pressure    = alt[6]
         else:
             self.Barometric_Pressure = calc_barometric_pressure(0.0, settings.Units)
 
@@ -1986,7 +1987,10 @@ def crushing_pressure_helper(settings, radius_onset_of_imperm_molecule, ending_a
 
     return (crushing_pressure_pascals / ATM) * settings.Units.toUnitsFactor()
 
-def vpm_altitude_dive_algorithm(altitude_values, Barometric_Pressure, settings):
+def vpm_altitude_dive_algorithm( Helium_Pressure, Nitrogen_Pressure
+                               , Initial_Critical_Radius_He, Initial_Critical_Radius_N2
+                               , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                               , altitude_values, settings):
     # Purpose:  This subprogram updates gas loadings and adjusts critical radii
     # (as required) based on whether or not diver is acclimatized at altitude or
     # makes an ascent to altitude before the dive.
@@ -1995,35 +1999,35 @@ def vpm_altitude_dive_algorithm(altitude_values, Barometric_Pressure, settings):
     time_at_altitude_before_dive = altitude_values.Hours_at_Altitude_Before_Dive * 60.0
 
     if altitude_values.Diver_Acclimatized_at_Altitude:
-        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
+        Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
 
         for i in COMPARTMENT_RANGE:
             Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
             Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
-            self.Helium_Pressure[i] = 0.0
-            self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+            Helium_Pressure[i] = 0.0
+            Nitrogen_Pressure[i] = (Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
     else:
         if (altitude_values.Starting_Acclimatized_Altitude >= altitude_values.Altitude_of_Dive) or (altitude_values.Starting_Acclimatized_Altitude < 0.0):
             raise AltitudeException("ERROR! STARTING ACCLIMATIZED ALTITUDE MUST BE LESS THAN ALTITUDE OF DIVE AND GREATER THAN OR EQUAL TO ZERO")
 
-        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Starting_Acclimatized_Altitude, settings.Units)
+        Barometric_Pressure = calc_barometric_pressure(altitude_values.Starting_Acclimatized_Altitude, settings.Units)
 
-        starting_ambient_pressure = self.Barometric_Pressure
+        starting_ambient_pressure = Barometric_Pressure
 
         for i in COMPARTMENT_RANGE:
-            self.Helium_Pressure[i] = 0.0
-            self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+            Helium_Pressure[i] = 0.0
+            Nitrogen_Pressure[i] = (Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
 
-        self.Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
-        ending_ambient_pressure = self.Barometric_Pressure
+        Barometric_Pressure = calc_barometric_pressure(altitude_values.Altitude_of_Dive, settings.Units)
+        ending_ambient_pressure = Barometric_Pressure
         initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
         rate = (ending_ambient_pressure - starting_ambient_pressure) / ascent_to_altitude_time
         nitrogen_rate = rate * SURFACE_FRACTION_INERT_GAS
 
         for i in COMPARTMENT_RANGE:
-            initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-            self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
-            compartment_gradient = (self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - ending_ambient_pressure
+            initial_nitrogen_pressure = Nitrogen_Pressure[i]
+            Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, ascent_to_altitude_time, NITROGEN_TIME_CONSTANTS[i], initial_nitrogen_pressure)
+            compartment_gradient = (Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases) - ending_ambient_pressure
             compartment_gradient_pascals = (compartment_gradient / settings.Units.toUnitsFactor()) * ATM
             gradient_he_bubble_formation = ((2.0 * settings.Surface_Tension_Gamma * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) / (Initial_Critical_Radius_He[i] * settings.Skin_Compression_GammaC))
 
@@ -2049,16 +2053,17 @@ def vpm_altitude_dive_algorithm(altitude_values, Barometric_Pressure, settings):
                 Initial_Critical_Radius_N2[i] = regenerated_radius_n2
                 Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
 
-        inspired_nitrogen_pressure = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+        inspired_nitrogen_pressure = (Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
 
         for i in COMPARTMENT_RANGE:
-            initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
+            initial_nitrogen_pressure = Nitrogen_Pressure[i]
 
-            self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], time_at_altitude_before_dive)
+            Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], time_at_altitude_before_dive)
 
     return ( Helium_Pressure, Nitrogen_Pressure
            , Initial_Critical_Radius_He, Initial_Critical_Radius_N2
            , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+           , Barometric_Pressure
            )
 
 
