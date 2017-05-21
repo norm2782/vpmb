@@ -260,34 +260,15 @@ class DiveState(object):
     def __init__(self):
         """Set default values"""
 
-        # Global Arrays
-        self.Allowable_Gradient_He = [0.0] * NUM_COMPARTMENTS
-        self.Allowable_Gradient_N2 = [0.0] * NUM_COMPARTMENTS
-
-        self.Deco_Gradient_He = [0.0] * NUM_COMPARTMENTS
-        self.Deco_Gradient_N2 = [0.0] * NUM_COMPARTMENTS
-
         # GLOBAL VARIABLES
-        self.Segment_Number = 0
         self.Run_Time = 0.0
         self.Segment_Time = 0.0
         self.Ending_Ambient_Pressure = 0.0
-        self.Barometric_Pressure = 0.0
 
         # GLOBAL ARRAYS
-
-        # Float
-        self.Helium_Pressure = [0.0] * NUM_COMPARTMENTS
+        self.Helium_Pressure   = [0.0] * NUM_COMPARTMENTS
         self.Nitrogen_Pressure = [0.0] * NUM_COMPARTMENTS
 
-        self.Initial_Helium_Pressure = [0.0] * NUM_COMPARTMENTS
-        self.Initial_Nitrogen_Pressure = [0.0] * NUM_COMPARTMENTS
-
-        self.Fraction_Helium = []
-        self.Fraction_Nitrogen = []
-
-        # TODO Remove
-        # self.settings_values
     def set_input_values(self, inputs):
         self.input_values = inputs
 
@@ -303,7 +284,10 @@ class DiveState(object):
     def get_json(self):
         return self.output_object.get_json()
 
-    def decompression_stop(self, settings, Mix_Number, deco_stop_depth, step_size):
+    def decompression_stop(self, Fraction_Helium, Fraction_Nitrogen
+                          , Deco_Gradient_He, Deco_Gradient_N2
+                          , Barometric_Pressure
+                          , settings, deco_stop_depth, step_size):
         """
         Purpose: This subprogram calculates the required time at each
         decompression stop.
@@ -314,22 +298,21 @@ class DiveState(object):
         self.Segment_Time = round_up_operation - self.Run_Time
         self.Run_Time = round_up_operation
         temp_segment_time = self.Segment_Time
-        self.Segment_Number += 1
-        ambient_pressure = deco_stop_depth + self.Barometric_Pressure
+        ambient_pressure = deco_stop_depth + Barometric_Pressure
         self.Ending_Ambient_Pressure = ambient_pressure
         next_stop = deco_stop_depth - step_size
 
-        inspired_helium_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Helium[Mix_Number - 1]
-        inspired_nitrogen_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[Mix_Number - 1]
+        inspired_helium_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Helium
+        inspired_nitrogen_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Nitrogen
 
         # Check to make sure that program won't lock up if unable to decompress
         # to the next stop.  If so, write error message and terminate program.
 
         for i in COMPARTMENT_RANGE:
             if(inspired_helium_pressure + inspired_nitrogen_pressure) > 0.0:
-                weighted_allowable_gradient = (self.Deco_Gradient_He[i] * inspired_helium_pressure + self.Deco_Gradient_N2[i] * inspired_nitrogen_pressure) / (inspired_helium_pressure + inspired_nitrogen_pressure)
+                weighted_allowable_gradient = (Deco_Gradient_He[i] * inspired_helium_pressure + Deco_Gradient_N2[i] * inspired_nitrogen_pressure) / (inspired_helium_pressure + inspired_nitrogen_pressure)
 
-                if (inspired_helium_pressure + inspired_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient) > (next_stop + self.Barometric_Pressure):
+                if (inspired_helium_pressure + inspired_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient) > (next_stop + Barometric_Pressure):
                     raise OffGassingException("ERROR! OFF-GASSING GRADIENT IS TOO SMALL TO DECOMPRESS AT THE %f STOP. Next stop: %f" % (deco_stop_depth, next_stop))
 
         while True:
@@ -340,8 +323,8 @@ class DiveState(object):
                 self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], self.Segment_Time)
 
             deco_ceiling_depth = calc_deco_ceiling( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                  , self.Deco_Gradient_He, self.Deco_Gradient_N2
-                                                  , self.Barometric_Pressure, settings
+                                                  , Deco_Gradient_He, Deco_Gradient_N2
+                                                  , Barometric_Pressure, settings
                                                   )
 
             if deco_ceiling_depth > next_stop: # TODO Build this into the loop condition
@@ -382,12 +365,24 @@ class DiveState(object):
 
         # START initialize_data
 
+        Allowable_Gradient_He = [0.0] * NUM_COMPARTMENTS
+        Allowable_Gradient_N2 = [0.0] * NUM_COMPARTMENTS
+
+        Deco_Gradient_He = [0.0] * NUM_COMPARTMENTS
+        Deco_Gradient_N2 = [0.0] * NUM_COMPARTMENTS
+
+        Initial_Helium_Pressure = [0.0] * NUM_COMPARTMENTS
+        Initial_Nitrogen_Pressure = [0.0] * NUM_COMPARTMENTS
+
+        Barometric_Pressure = 0.0
+        Segment_Number = 0
+
         # Purpose: Initialize the object with the data loaded from the input file
 
         # INITIALIZE CONSTANTS/VARIABLES
         settings.Constant_Pressure_Other_Gases = (settings.Pressure_Other_Gases_mmHg / 760.0) * settings.Units.toUnitsFactor()
         self.Run_Time = 0.0
-        self.Segment_Number = 0
+        Segment_Number = 0
 
         Initial_Critical_Radius_He = [0.0] * NUM_COMPARTMENTS
         Initial_Critical_Radius_N2 = [0.0] * NUM_COMPARTMENTS
@@ -430,15 +425,15 @@ class DiveState(object):
             Initial_Critical_Radius_N2  = alt[3]
             Adjusted_Critical_Radius_He = alt[4]
             Adjusted_Critical_Radius_N2 = alt[5]
-            self.Barometric_Pressure    = alt[6]
+            Barometric_Pressure    = alt[6]
         else:
-            self.Barometric_Pressure = calc_barometric_pressure(0.0, settings.Units)
+            Barometric_Pressure = calc_barometric_pressure(0.0, settings.Units)
 
             for i in COMPARTMENT_RANGE:
                 Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
                 Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
                 self.Helium_Pressure[i] = 0.0
-                self.Nitrogen_Pressure[i] = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+                self.Nitrogen_Pressure[i] = (Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
         # END initialize_data
 
         # START OF REPETITIVE DIVE LOOP
@@ -484,21 +479,21 @@ class DiveState(object):
 
             num_gas_mixes = dive.num_gas_mixes
             fraction_oxygen = [0.0] * num_gas_mixes
-            self.Fraction_Helium = [0.0] * num_gas_mixes
-            self.Fraction_Nitrogen = [0.0] * num_gas_mixes
+            Fraction_Helium = [0.0] * num_gas_mixes
+            Fraction_Nitrogen = [0.0] * num_gas_mixes
 
             gas_mix_range = range(num_gas_mixes)
 
             for i in gas_mix_range:
                 fraction_oxygen[i] = dive.gasmix_summary[i].fraction_O2
-                self.Fraction_Nitrogen[i] = dive.gasmix_summary[i].fraction_N2
-                self.Fraction_Helium[i] = dive.gasmix_summary[i].fraction_He
+                Fraction_Nitrogen[i] = dive.gasmix_summary[i].fraction_N2
+                Fraction_Helium[i] = dive.gasmix_summary[i].fraction_He
 
-                if fraction_oxygen[i] + self.Fraction_Nitrogen[i] + self.Fraction_Helium[i] != 1.0:
+                if fraction_oxygen[i] + Fraction_Nitrogen[i] + Fraction_Helium[i] != 1.0:
                     raise InputFileException("ERROR IN INPUT FILE (gas mixes don't add up to 1.0")
 
             for i in gas_mix_range:
-                self.output_object.add_gasmix(fraction_oxygen[i], self.Fraction_Nitrogen[i], self.Fraction_Helium[i])
+                self.output_object.add_gasmix(fraction_oxygen[i], Fraction_Nitrogen[i], Fraction_Helium[i])
 
             # END set_gas_mixes
             # START profile_code_loop
@@ -519,10 +514,10 @@ class DiveState(object):
 
             for profile in dive.profile_codes:
                 if profile.profile_code == ProfileCode.Descent:
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, profile.starting_depth, profile.ending_depth, profile.rate, self.Barometric_Pressure, profile.gasmix, settings)
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, Initial_Helium_Pressure, Initial_Nitrogen_Pressure, Fraction_Helium, Fraction_Nitrogen, profile.starting_depth, profile.ending_depth, profile.rate, Barometric_Pressure, profile.gasmix, settings)
 
-                    self.Initial_Helium_Pressure   = pressures[0]
-                    self.Initial_Nitrogen_Pressure = pressures[1]
+                    Initial_Helium_Pressure   = pressures[0]
+                    Initial_Nitrogen_Pressure = pressures[1]
 
                     self.Helium_Pressure   = pressures[2]
                     self.Nitrogen_Pressure = pressures[3]
@@ -530,36 +525,36 @@ class DiveState(object):
                     self.Segment_Time = pressures[4]
                     self.Run_Time += pressures[4]
 
-                    self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
-                    self.Segment_Number += 1
+                    self.Ending_Ambient_Pressure = profile.ending_depth + Barometric_Pressure
+                    Segment_Number += 1
 
                     if profile.ending_depth > profile.starting_depth:
-                        pressure = calc_crushing_pressure( self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure
+                        pressure = calc_crushing_pressure( Initial_Helium_Pressure, Initial_Nitrogen_Pressure
                                                          , self.Helium_Pressure, self.Nitrogen_Pressure
                                                          , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
                                                          , Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
                                                          , Amb_Pressure_Onset_of_Imperm, Gas_Tension_Onset_of_Imperm
-                                                         , self.Fraction_Helium[profile.gasmix - 1], self.Fraction_Nitrogen[profile.gasmix - 1]
-                                                         , self.Barometric_Pressure, profile, settings)
+                                                         , Fraction_Helium[profile.gasmix - 1], Fraction_Nitrogen[profile.gasmix - 1]
+                                                         , Barometric_Pressure, profile, settings)
                         Max_Crushing_Pressure_He = pressure[0]
                         Max_Crushing_Pressure_N2 = pressure[1]
 
-                    self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, profile.gasmix, profile.starting_depth, profile.ending_depth, profile.rate)
+                    self.output_object.add_dive_profile_entry_descent(Segment_Number, self.Segment_Time, self.Run_Time, profile.gasmix, profile.starting_depth, profile.ending_depth, profile.rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
                     loadings = gas_loadings_constant_depth( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                          , self.Fraction_Helium[profile.gasmix - 1]
-                                                          , self.Fraction_Nitrogen[profile.gasmix - 1]
-                                                          , self.Barometric_Pressure, self.Run_Time, profile, settings);
+                                                          , Fraction_Helium[profile.gasmix - 1]
+                                                          , Fraction_Nitrogen[profile.gasmix - 1]
+                                                          , Barometric_Pressure, self.Run_Time, profile, settings);
                     self.Helium_Pressure   = loadings[0]
                     self.Nitrogen_Pressure = loadings[1]
                     self.Ending_Ambient_Pressure = loadings[2]
                     self.Segment_Time      = loadings[3]
 
                     self.Run_Time = profile.run_time_at_end_of_segment
-                    self.Segment_Number += 1
+                    Segment_Number += 1
 
-                    self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, profile.gasmix, profile.depth)
+                    self.output_object.add_dive_profile_entry_ascent(Segment_Number, self.Segment_Time, self.Run_Time, profile.gasmix, profile.depth)
                 else:
                     break
 
@@ -620,8 +615,8 @@ class DiveState(object):
                 Initial_Allowable_Gradient_N2[i] = (initial_allowable_grad_n2_pa / ATM) * settings.Units.toUnitsFactor()
                 Initial_Allowable_Gradient_He[i] = (initial_allowable_grad_he_pa / ATM) * settings.Units.toUnitsFactor()
 
-                self.Allowable_Gradient_He[i] = Initial_Allowable_Gradient_He[i]
-                self.Allowable_Gradient_N2[i] = Initial_Allowable_Gradient_N2[i]
+                Allowable_Gradient_He[i] = Initial_Allowable_Gradient_He[i]
+                Allowable_Gradient_N2[i] = Initial_Allowable_Gradient_N2[i]
 
             # END self.calc_initial_allowable_gradient()
 
@@ -636,7 +631,7 @@ class DiveState(object):
                 N2_Pressure_Start_of_Ascent[i] = self.Nitrogen_Pressure[i]
 
             Run_Time_Start_of_Ascent = self.Run_Time
-            Segment_Number_Start_of_Ascent = self.Segment_Number
+            Segment_Number_Start_of_Ascent = Segment_Number
 
             #     INPUT PARAMETERS TO BE USED FOR STAGED DECOMPRESSION AND SAVE IN ARRAYS.
             #     ASSIGN INITIAL PARAMETERS TO BE USED AT START OF ASCENT
@@ -680,10 +675,10 @@ class DiveState(object):
             # it is information to tell the diver where to start putting on the brakes
             # during ascent.  This should be prominently displayed by any deco program.
 
-            Depth_Start_of_Deco_Zone = calc_start_of_deco_zone( self.Fraction_Helium[Mix_Number - 1]
-                                                              , self.Fraction_Nitrogen[Mix_Number - 1]
+            Depth_Start_of_Deco_Zone = calc_start_of_deco_zone( Fraction_Helium[Mix_Number - 1]
+                                                              , Fraction_Nitrogen[Mix_Number - 1]
                                                               , self.Helium_Pressure, self.Nitrogen_Pressure
-                                                              , starting_depth, self.Barometric_Pressure, rate, settings
+                                                              , starting_depth, Barometric_Pressure, rate, settings
                                                               )
 
             # TODO Is this used at all?
@@ -712,17 +707,17 @@ class DiveState(object):
             #     released as a result of supersaturation gradients (not possible below the
             #     decompression zone).
 
-            pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Depth_Start_of_Deco_Zone, rate, self.Barometric_Pressure, Mix_Number, settings)
-            self.Initial_Helium_Pressure = pressures[0]
-            self.Initial_Nitrogen_Pressure = pressures[1]
+            pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, Initial_Helium_Pressure, Initial_Nitrogen_Pressure, Fraction_Helium, Fraction_Nitrogen, starting_depth, Depth_Start_of_Deco_Zone, rate, Barometric_Pressure, Mix_Number, settings)
+            Initial_Helium_Pressure = pressures[0]
+            Initial_Nitrogen_Pressure = pressures[1]
 
             self.Helium_Pressure = pressures[2]
             self.Nitrogen_Pressure = pressures[3]
 
             self.Segment_Time = pressures[4]
-            self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
+            self.Ending_Ambient_Pressure = profile.ending_depth + Barometric_Pressure
             self.Run_Time += pressures[4]
-            self.Segment_Number += 1
+            Segment_Number += 1
 
             Run_Time_Start_of_Deco_Zone = self.Run_Time
             Deco_Phase_Volume_Time = 0.0
@@ -753,9 +748,9 @@ class DiveState(object):
             while True:
                 Ascent_Ceiling_Depth = calc_ascent_ceiling( self.Nitrogen_Pressure
                                                           , self.Helium_Pressure
-                                                          , self.Allowable_Gradient_N2
-                                                          , self.Allowable_Gradient_He
-                                                          , self.Barometric_Pressure
+                                                          , Allowable_Gradient_N2
+                                                          , Allowable_Gradient_He
+                                                          , Barometric_Pressure
                                                           , settings)
 
 
@@ -777,11 +772,11 @@ class DiveState(object):
                 # CHECK AGAIN TO MAKE SURE THAT ADJUSTED FIRST STOP WILL NOT BE BELOW THE
                 # DECO ZONE.
 
-                Deco_Stop_Depth = projected_ascent( self.Fraction_Helium[Mix_Number - 1], self.Fraction_Nitrogen[Mix_Number - 1]
+                Deco_Stop_Depth = projected_ascent( Fraction_Helium[Mix_Number - 1], Fraction_Nitrogen[Mix_Number - 1]
                                                   , self.Helium_Pressure, self.Nitrogen_Pressure
-                                                  , self.Allowable_Gradient_He, self.Allowable_Gradient_N2
+                                                  , Allowable_Gradient_He, Allowable_Gradient_N2
                                                   , Deco_Stop_Depth, Depth_Start_of_Deco_Zone
-                                                  , self.Barometric_Pressure, rate, settings
+                                                  , Barometric_Pressure, rate, settings
                                                   )
 
                 if Deco_Stop_Depth > Depth_Start_of_Deco_Zone:
@@ -797,22 +792,22 @@ class DiveState(object):
                         self.Nitrogen_Pressure[i] = N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
-                    self.Segment_Number = Segment_Number_Start_of_Ascent
+                    Segment_Number = Segment_Number_Start_of_Ascent
                     starting_depth = Depth_Change[0]
                     ending_depth = 0.0
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, ending_depth, rate, self.Barometric_Pressure, Mix_Number, settings)
-                    self.Initial_Helium_Pressure = pressures[0]
-                    self.Initial_Nitrogen_Pressure = pressures[1]
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, Initial_Helium_Pressure, Initial_Nitrogen_Pressure, Fraction_Helium, Fraction_Nitrogen, starting_depth, ending_depth, rate, Barometric_Pressure, Mix_Number, settings)
+                    Initial_Helium_Pressure = pressures[0]
+                    Initial_Nitrogen_Pressure = pressures[1]
 
                     self.Helium_Pressure = pressures[2]
                     self.Nitrogen_Pressure = pressures[3]
 
                     self.Segment_Time = pressures[4]
-                    self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
+                    self.Ending_Ambient_Pressure = profile.ending_depth + Barometric_Pressure
                     self.Run_Time += pressures[4]
-                    self.Segment_Number += 1
+                    Segment_Number += 1
 
-                    self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, rate)
+                    self.output_object.add_decompression_profile_ascent(Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, rate)
                     break
 
                 # ASSIGN VARIABLES FOR ASCENT FROM START OF DECO ZONE TO FIRST STOP.  SAVE
@@ -839,18 +834,18 @@ class DiveState(object):
                 # ascent - such as specifying a 5 msw step size change at the 3 msw stop!
 
                 while True:
-                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, Mix_Number, settings)
+                    pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, Initial_Helium_Pressure, Initial_Nitrogen_Pressure, Fraction_Helium, Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, Barometric_Pressure, Mix_Number, settings)
 
-                    self.Initial_Helium_Pressure = pressures[0]
-                    self.Initial_Nitrogen_Pressure = pressures[1]
+                    Initial_Helium_Pressure = pressures[0]
+                    Initial_Nitrogen_Pressure = pressures[1]
 
                     self.Helium_Pressure = pressures[2]
                     self.Nitrogen_Pressure = pressures[3]
 
                     self.Segment_Time = pressures[4]
-                    self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
+                    self.Ending_Ambient_Pressure = profile.ending_depth + Barometric_Pressure
                     self.Run_Time += pressures[4]
-                    self.Segment_Number += 1
+                    Segment_Number += 1
 
                     if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                         break
@@ -862,11 +857,15 @@ class DiveState(object):
                                 rate = rate_Change[i]
                                 Step_Size = Step_Size_Change[i]
 
-                    comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, self.Allowable_Gradient_He, self.Allowable_Gradient_N2, self.Barometric_Pressure, settings)
-                    self.Deco_Gradient_He = comps[0]
-                    self.Deco_Gradient_N2 = comps[1]
+                    comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, Allowable_Gradient_He, Allowable_Gradient_N2, Barometric_Pressure, settings)
+                    Deco_Gradient_He = comps[0]
+                    Deco_Gradient_N2 = comps[1]
 
-                    self.decompression_stop(settings, Mix_Number, Deco_Stop_Depth, Step_Size)
+                    self.decompression_stop( Fraction_Helium[Mix_Number - 1], Fraction_Nitrogen[Mix_Number - 1]
+                                           , Deco_Gradient_He, Deco_Gradient_N2
+                                           , Barometric_Pressure
+                                           , settings, Deco_Stop_Depth, Step_Size)
+                    Segment_Number += 1
 
                     starting_depth = Deco_Stop_Depth
                     Next_Stop = Deco_Stop_Depth - Step_Size
@@ -891,7 +890,7 @@ class DiveState(object):
                 Deco_Phase_Volume_Time = self.Run_Time - Run_Time_Start_of_Deco_Zone
 
                 Surface_Phase_Volume_Time = calc_surface_phase_volume_time( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                                          , self.Barometric_Pressure, settings)
+                                                                          , Barometric_Pressure, settings)
 
                 for i in COMPARTMENT_RANGE:
                     Phase_Volume_Time[i] = Deco_Phase_Volume_Time + Surface_Phase_Volume_Time[i]
@@ -926,7 +925,7 @@ class DiveState(object):
                         self.Nitrogen_Pressure[i] = N2_Pressure_Start_of_Ascent[i]
 
                     self.Run_Time = Run_Time_Start_of_Ascent
-                    self.Segment_Number = Segment_Number_Start_of_Ascent
+                    Segment_Number = Segment_Number_Start_of_Ascent
                     starting_depth = Depth_Change[0]
                     Mix_Number = Mix_Change[0]
                     rate = rate_Change[0]
@@ -937,22 +936,22 @@ class DiveState(object):
                     # DECO STOP LOOP BLOCK FOR FINAL DECOMPRESSION SCHEDULE
 
                     while True:
-                        pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, self.Barometric_Pressure, Mix_Number, settings)
+                        pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, Initial_Helium_Pressure, Initial_Nitrogen_Pressure, Fraction_Helium, Fraction_Nitrogen, starting_depth, Deco_Stop_Depth, rate, Barometric_Pressure, Mix_Number, settings)
 
-                        self.Initial_Helium_Pressure = pressures[0]
-                        self.Initial_Nitrogen_Pressure = pressures[1]
+                        Initial_Helium_Pressure = pressures[0]
+                        Initial_Nitrogen_Pressure = pressures[1]
 
                         self.Helium_Pressure = pressures[2]
                         self.Nitrogen_Pressure = pressures[3]
 
                         self.Segment_Time = pressures[4]
-                        self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
+                        self.Ending_Ambient_Pressure = profile.ending_depth + Barometric_Pressure
                         self.Run_Time += pressures[4]
-                        self.Segment_Number += 1
+                        Segment_Number += 1
 
-                        Max_Actual_Gradient = calc_max_actual_gradient(Max_Actual_Gradient, Deco_Stop_Depth, self.Helium_Pressure, self.Nitrogen_Pressure, self.Barometric_Pressure, settings)
+                        Max_Actual_Gradient = calc_max_actual_gradient(Max_Actual_Gradient, Deco_Stop_Depth, self.Helium_Pressure, self.Nitrogen_Pressure, Barometric_Pressure, settings)
 
-                        self.output_object.add_decompression_profile_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, rate)
+                        self.output_object.add_decompression_profile_ascent(Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, rate)
                         if Deco_Stop_Depth <= 0.0: # TODO Bake this condition into the loop
                             break
 
@@ -963,11 +962,15 @@ class DiveState(object):
                                     rate = rate_Change[i]
                                     Step_Size = Step_Size_Change[i]
 
-                        comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, self.Allowable_Gradient_He, self.Allowable_Gradient_N2, self.Barometric_Pressure, settings)
-                        self.Deco_Gradient_He = comps[0]
-                        self.Deco_Gradient_N2 = comps[1]
+                        comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, Allowable_Gradient_He, Allowable_Gradient_N2, Barometric_Pressure, settings)
+                        Deco_Gradient_He = comps[0]
+                        Deco_Gradient_N2 = comps[1]
 
-                        self.decompression_stop(settings, Mix_Number, Deco_Stop_Depth, Step_Size)
+                        self.decompression_stop( Fraction_Helium[Mix_Number - 1], Fraction_Nitrogen[Mix_Number - 1]
+                                               , Deco_Gradient_He, Deco_Gradient_N2
+                                               , Barometric_Pressure
+                                               , settings, Deco_Stop_Depth, Step_Size)
+                        Segment_Number += 1
                         # This next bit just rounds up the stop time at the first stop to be in
                         # whole increments of the minimum stop time (to make for a nice deco table).
 
@@ -986,9 +989,9 @@ class DiveState(object):
                         # continuous decompression schedule can be computed.
 
                         if trunc(settings.Minimum_Deco_Stop_Time) == settings.Minimum_Deco_Stop_Time:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, int(Deco_Stop_Depth), int(Stop_Time))
+                            self.output_object.add_decompression_profile_constant(Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, int(Deco_Stop_Depth), int(Stop_Time))
                         else:
-                            self.output_object.add_decompression_profile_constant(self.Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, Stop_Time)
+                            self.output_object.add_decompression_profile_constant(Segment_Number, self.Segment_Time, self.Run_Time, Mix_Number, Deco_Stop_Depth, Stop_Time)
 
                         starting_depth = Deco_Stop_Depth
                         Next_Stop = Deco_Stop_Depth - Step_Size
@@ -998,13 +1001,13 @@ class DiveState(object):
                     # END critical_volume_decision_tree
 
                 else:
-                    crit = critical_volume( self.Allowable_Gradient_He, self.Allowable_Gradient_N2
+                    crit = critical_volume( Allowable_Gradient_He, Allowable_Gradient_N2
                                           , Deco_Phase_Volume_Time, Surface_Phase_Volume_Time
                                           , Adjusted_Crushing_Pressure_He, Adjusted_Crushing_Pressure_N2
                                           , Initial_Allowable_Gradient_He, Initial_Allowable_Gradient_N2
                                           , settings)
-                    self.Allowable_Gradient_He = crit[0]
-                    self.Allowable_Gradient_N2 = crit[1]
+                    Allowable_Gradient_He = crit[0]
+                    Allowable_Gradient_N2 = crit[1]
 
                     Deco_Phase_Volume_Time = 0.0
                     self.Run_Time = Run_Time_Start_of_Deco_Zone
@@ -1028,7 +1031,7 @@ class DiveState(object):
             # REPETITIVE LOOP AT LINE 30.
             if dive.repetitive_code:
                 load = gas_loadings_surface_interval( self.Helium_Pressure, self.Nitrogen_Pressure
-                                                    , self.Barometric_Pressure, dive, settings)
+                                                    , Barometric_Pressure, dive, settings)
                 self.Helium_Pressure   = load[0]
                 self.Nitrogen_Pressure = load[1]
 
@@ -1066,7 +1069,7 @@ class DiveState(object):
                     Max_Actual_Gradient[i] = 0.0
 
                 self.Run_Time = 0.0
-                self.Segment_Number = 0
+                Segment_Number = 0
 
 # functions
 
