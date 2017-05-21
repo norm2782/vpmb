@@ -1762,6 +1762,7 @@ def calc_surface_phase_volume_time( Surface_Phase_Volume_Time
   # when both helium and nitrogen are present.  Refer to separate write-up
   # for a more detailed explanation of this algorithm.
 
+  Surface_Phase_Volume_Time = [0.0] * NUM_COMPARTMENTS
   surface_inspired_n2_pressure = (barometric_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
   for i in COMPARTMENT_RANGE:
       if nitrogen_pressure[i] > surface_inspired_n2_pressure:
