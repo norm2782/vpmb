@@ -806,8 +806,8 @@ class DiveState(object):
                                              , Barometric_Pressure, Run_Time
                                              , settings, Deco_Stop_Depth, Step_Size)
 
-                    Helium_Pressure    = deco[0]
-                    Nitrogen_Pressure  = deco[1]
+                    Helium_Pressure         = deco[0]
+                    Nitrogen_Pressure       = deco[1]
                     Ending_Ambient_Pressure = deco[2]
                     Segment_Time            = deco[3]
                     Run_Time                = deco[4]
@@ -990,33 +990,21 @@ class DiveState(object):
                 Helium_Pressure   = load[0]
                 Nitrogen_Pressure = load[1]
 
-                # START vpm_repetitive_algorithm
+                rep = vpm_repetitive_algorithm( Max_Actual_Gradient
+                                              , Initial_Allowable_Gradient_He
+                                              , Initial_Allowable_Gradient_N2
+                                              , Initial_Critical_Radius_He
+                                              , Initial_Critical_Radius_N2
+                                              , Adjusted_Crushing_Pressure_He
+                                              , Adjusted_Crushing_Pressure_N2
+                                              , Adjusted_Critical_Radius_He
+                                              , Adjusted_Critical_Radius_N2
+                                              , dive, settings)
 
-                # Purpose: This subprogram implements the VPM Repetitive Algorithm that was
-                # envisioned by Professor David E. Yount only months before his passing.
-
-                for i in COMPARTMENT_RANGE:
-                    max_actual_gradient_pascals = (Max_Actual_Gradient[i] / settings.Units.toUnitsFactor()) * ATM
-
-                    adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / settings.Units.toUnitsFactor()) * ATM
-                    adj_crush_pressure_n2_pascals = (Adjusted_Crushing_Pressure_N2[i] / settings.Units.toUnitsFactor()) * ATM
-
-                    if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_N2[i]:
-                        new_critical_radius_n2 = new_critical_radius(settings, max_actual_gradient_pascals, adj_crush_pressure_n2_pascals)
-
-                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-dive.surface_interval_time_minutes / settings.Regeneration_Time_Constant)
-
-                    else:
-                        Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
-
-                    if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_He[i]:
-                        new_critical_radius_he = new_critical_radius(settings, max_actual_gradient_pascals, adj_crush_pressure_he_pascals)
-
-                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-dive.surface_interval_time_minutes / settings.Regeneration_Time_Constant)
-                    else:
-                        Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
-
-                # END vpm_repetitive_algorithm
+                Initial_Critical_Radius_He  = rep[0]
+                Initial_Critical_Radius_N2  = rep[1]
+                Adjusted_Critical_Radius_He = rep[2]
+                Adjusted_Critical_Radius_N2 = rep[3]
 
                 for i in COMPARTMENT_RANGE:
                     Max_Crushing_Pressure_He[i] = 0.0
@@ -1764,6 +1752,43 @@ def gas_loadings_constant_depth( Helium_Pressure, Nitrogen_Pressure
 
     return (Helium_Pressure, Nitrogen_Pressure, ambient_pressure, Segment_Time)
 
+def vpm_repetitive_algorithm( Max_Actual_Gradient
+                            , Initial_Allowable_Gradient_He
+                            , Initial_Allowable_Gradient_N2
+                            , Initial_Critical_Radius_He
+                            , Initial_Critical_Radius_N2
+                            , Adjusted_Crushing_Pressure_He
+                            , Adjusted_Crushing_Pressure_N2
+                            , Adjusted_Critical_Radius_He
+                            , Adjusted_Critical_Radius_N2
+                            , dive, settings):
+    # Purpose: This subprogram implements the VPM Repetitive Algorithm that was
+    # envisioned by Professor David E. Yount only months before his passing.
+
+    for i in COMPARTMENT_RANGE:
+        max_actual_gradient_pascals = (Max_Actual_Gradient[i] / settings.Units.toUnitsFactor()) * ATM
+
+        adj_crush_pressure_he_pascals = (Adjusted_Crushing_Pressure_He[i] / settings.Units.toUnitsFactor()) * ATM
+        adj_crush_pressure_n2_pascals = (Adjusted_Crushing_Pressure_N2[i] / settings.Units.toUnitsFactor()) * ATM
+
+        if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_N2[i]:
+            new_critical_radius_n2 = new_critical_radius(settings, max_actual_gradient_pascals, adj_crush_pressure_n2_pascals)
+
+            Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i] + (Initial_Critical_Radius_N2[i] - new_critical_radius_n2) * exp(-dive.surface_interval_time_minutes / settings.Regeneration_Time_Constant)
+
+        else:
+            Adjusted_Critical_Radius_N2[i] = Initial_Critical_Radius_N2[i]
+
+        if Max_Actual_Gradient[i] > Initial_Allowable_Gradient_He[i]:
+            new_critical_radius_he = new_critical_radius(settings, max_actual_gradient_pascals, adj_crush_pressure_he_pascals)
+
+            Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i] + (Initial_Critical_Radius_He[i] - new_critical_radius_he) * exp(-dive.surface_interval_time_minutes / settings.Regeneration_Time_Constant)
+        else:
+            Adjusted_Critical_Radius_He[i] = Initial_Critical_Radius_He[i]
+
+    return ( Initial_Critical_Radius_He, Initial_Critical_Radius_N2
+           , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+           )
 
 
 
