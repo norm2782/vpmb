@@ -579,9 +579,9 @@ class DiveState(object):
             # Profile codes: 1 = Ascent/Descent, 2 = Constant Depth, 99 = Decompress
 
             for profile in dive.profile_codes:
-                if profile.profile_code == ProfileCode.Descent:
-                    self.Mix_Number = profile.gasmix
+                self.Mix_Number = profile.gasmix
 
+                if profile.profile_code == ProfileCode.Descent:
                     pressures = gas_loadings_ascent_descent(self.Helium_Pressure, self.Nitrogen_Pressure, self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure, self.Fraction_Helium, self.Fraction_Nitrogen, profile.starting_depth, profile.ending_depth, profile.rate, self.Barometric_Pressure, self.Mix_Number, settings)
 
                     self.Initial_Helium_Pressure = pressures[0]
@@ -610,8 +610,6 @@ class DiveState(object):
                     self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.starting_depth, profile.ending_depth, profile.rate)
 
                 elif profile.profile_code == ProfileCode.Constant:
-                    self.Mix_Number = profile.gasmix
-
                     loadings = gas_loadings_constant_depth( self.Helium_Pressure, self.Nitrogen_Pressure
                                                           , self.Fraction_Helium[self.Mix_Number - 1]
                                                           , self.Fraction_Nitrogen[self.Mix_Number - 1]
