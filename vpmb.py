@@ -314,27 +314,6 @@ class DiveState(object):
 
             self.Nitrogen_Pressure[i] = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, self.Segment_Time, self.Nitrogen_Time_Constant[i], self.Initial_Nitrogen_Pressure[i])
 
-    def boyles_law_compensation(self, settings, first_stop_depth, deco_stop_depth, step_size):
-        """
-        Purpose: This subprogram calculates the reduction in allowable gradients
-        with decreasing ambient pressure during the decompression profile based
-        on Boyle's Law considerations.
-        """
-
-        next_stop = deco_stop_depth - step_size
-        ambient_pressure_first_stop = first_stop_depth + self.Barometric_Pressure
-        ambient_pressure_next_stop = next_stop + self.Barometric_Pressure
-
-        amb_press_first_stop_pascals = (ambient_pressure_first_stop / settings.Units.toUnitsFactor()) * ATM
-        amb_press_next_stop_pascals = (ambient_pressure_next_stop / settings.Units.toUnitsFactor()) * ATM
-
-        for i in COMPARTMENT_RANGE:
-            # Helium Calculation
-            self.Deco_Gradient_He[i] = calculate_deco_gradient(settings, self.Allowable_Gradient_He[i], amb_press_first_stop_pascals, amb_press_next_stop_pascals)
-
-            # Nitrogen Calculation
-            self.Deco_Gradient_N2[i] = calculate_deco_gradient(settings, self.Allowable_Gradient_N2[i], amb_press_first_stop_pascals, amb_press_next_stop_pascals)
-
     def decompression_stop(self, settings, deco_stop_depth, step_size):
         """
         Purpose: This subprogram calculates the required time at each
@@ -1265,7 +1244,7 @@ class DiveState(object):
                 initial_nitrogen_pressure = [0.0] * NUM_COMPARTMENTS
 
                 for i in COMPARTMENT_RANGE:
-                    initial_helium_pressure[i] = self.Helium_Pressure[i]
+                    initial_helium_pressure[i]   = self.Helium_Pressure[i]
                     initial_nitrogen_pressure[i] = self.Nitrogen_Pressure[i]
 
                 keep_going = True
@@ -1352,7 +1331,9 @@ class DiveState(object):
                                 rate = rate_Change[i]
                                 Step_Size = Step_Size_Change[i]
 
-                    self.boyles_law_compensation(settings, First_Stop_Depth, Deco_Stop_Depth, Step_Size)
+                    comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, self.Allowable_Gradient_He, self.Allowable_Gradient_N2, self.Barometric_Pressure, settings)
+                    self.Deco_Gradient_He = comps[0]
+                    self.Deco_Gradient_N2 = comps[1]
 
                     self.decompression_stop(settings, Deco_Stop_Depth, Step_Size)
 
@@ -1500,7 +1481,10 @@ class DiveState(object):
                                     rate = rate_Change[i]
                                     Step_Size = Step_Size_Change[i]
 
-                        self.boyles_law_compensation(settings, First_Stop_Depth, Deco_Stop_Depth, Step_Size)
+                        comps = boyles_law_compensation(First_Stop_Depth, Deco_Stop_Depth, Step_Size, self.Allowable_Gradient_He, self.Allowable_Gradient_N2, self.Barometric_Pressure, settings)
+                        self.Deco_Gradient_He = comps[0]
+                        self.Deco_Gradient_N2 = comps[1]
+
                         self.decompression_stop(settings, Deco_Stop_Depth, Step_Size)
                         # This next bit just rounds up the stop time at the first stop to be in
                         # whole increments of the minimum stop time (to make for a nice deco table).
@@ -1690,6 +1674,34 @@ def calc_ascent_ceiling(helium_pressures, nitrogen_pressures, helium_gradients, 
 
     return max(map(_ascent_ceiling_depth
                   , zip(helium_pressures, nitrogen_pressures, helium_gradients, nitrogen_gradients)))
+
+
+def boyles_law_compensation(first_stop_depth, deco_stop_depth, step_size, allowable_gradients_he, allowable_gradients_n2, barometric_pressure, settings):
+    """
+    Purpose: This subprogram calculates the reduction in allowable gradients
+    with decreasing ambient pressure during the decompression profile based
+    on Boyle's Law considerations.
+    """
+    deco_gradients_he = [0.0] * NUM_COMPARTMENTS
+    deco_gradients_n2 = [0.0] * NUM_COMPARTMENTS
+
+    next_stop = deco_stop_depth - step_size
+    ambient_pressure_first_stop = first_stop_depth + barometric_pressure
+    ambient_pressure_next_stop = next_stop + barometric_pressure
+
+    amb_press_first_stop_pascals = (ambient_pressure_first_stop / settings.Units.toUnitsFactor()) * ATM
+    amb_press_next_stop_pascals = (ambient_pressure_next_stop / settings.Units.toUnitsFactor()) * ATM
+
+    for i in COMPARTMENT_RANGE:
+        # Helium Calculation
+        deco_gradients_he[i] = calculate_deco_gradient(settings, allowable_gradients_he[i], amb_press_first_stop_pascals, amb_press_next_stop_pascals)
+
+        # Nitrogen Calculation
+        deco_gradients_n2[i] = calculate_deco_gradient(settings, allowable_gradients_n2[i], amb_press_first_stop_pascals, amb_press_next_stop_pascals)
+
+    return (deco_gradients_he, deco_gradients_n2)
+
+
 
 
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):
