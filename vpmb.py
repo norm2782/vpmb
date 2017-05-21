@@ -324,60 +324,11 @@ class DiveState(object):
                 self.Helium_Pressure[i] = haldane_equation(initial_helium_pressure, inspired_helium_pressure, self.Helium_Time_Constant[i], self.Segment_Time)
                 self.Nitrogen_Pressure[i] = haldane_equation(initial_nitrogen_pressure, inspired_nitrogen_pressure, self.Nitrogen_Time_Constant[i], self.Segment_Time)
 
-            # START calc_deco_ceiling
+            deco_ceiling_depth = calc_deco_ceiling( self.Helium_Pressure, self.Nitrogen_Pressure
+                                                  , self.Deco_Gradient_He, self.Deco_Gradient_N2
+                                                  , self.Barometric_Pressure, settings
+                                                  )
 
-            # Purpose: This subprogram calculates the deco ceiling (the safe ascent
-            # depth) in each compartment, based on the allowable "deco gradients"
-            # computed in the Boyle's Law Compensation subroutine, and then finds the
-            # deepest deco ceiling across all compartments.  This deepest value
-            # (Deco Ceiling Depth) is then used by the Decompression Stop subroutine
-            # to determine the actual deco schedule.
-
-            # Since there are two sets of deco gradients being tracked, one for
-            # helium and one for nitrogen, a "weighted allowable gradient" must be
-            # computed each time based on the proportions of helium and nitrogen in
-            # each compartment.  This proportioning follows the methodology of
-            # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
-            # such as after extended periods of oxygen breathing, then the minimum value
-            # across both gases will be used.  It is important to note that if a
-            # compartment is empty of helium and nitrogen, then the weighted allowable
-            # gradient formula cannot be used since it will result in division by zero.
-
-            compartment_deco_ceiling = [0.0] * NUM_COMPARTMENTS
-
-            gas_loading = 0.0
-            tolerated_ambient_pressure = 0.0
-            weighted_allowable_gradient = 0.0
-
-            for i in COMPARTMENT_RANGE:
-                gas_loading = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i]
-
-                if gas_loading > 0.0:
-                    weighted_allowable_gradient = (self.Deco_Gradient_He[i] * self.Helium_Pressure[i] + self.Deco_Gradient_N2[i] * self.Nitrogen_Pressure[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i])
-                    tolerated_ambient_pressure = (gas_loading + settings.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
-                else:
-                    weighted_allowable_gradient = min(self.Deco_Gradient_He[i], self.Deco_Gradient_N2[i])
-                    tolerated_ambient_pressure = settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient
-
-                # The tolerated ambient pressure cannot be less than zero absolute, i.e.,
-                # the vacuum of outer space!
-                if tolerated_ambient_pressure < 0.0:
-                    tolerated_ambient_pressure = 0.0
-
-                # The Deco Ceiling Depth is computed in a loop after all of the individual
-                # compartment deco ceilings have been calculated.  It is important that the
-                # Deco Ceiling Depth (max deco ceiling across all compartments) only be
-                # extracted from the compartment values and not be compared against some
-                # initialization value.  For example, if MAX(deco_ceiling_depth . .) was
-                # compared against zero, this could cause a program lockup because sometimes
-                # the Deco Ceiling Depth needs to be negative (but not less than absolute
-                # zero) in order to decompress to the last stop at zero depth.
-
-                compartment_deco_ceiling[i] = tolerated_ambient_pressure - self.Barometric_Pressure
-
-            deco_ceiling_depth = max(compartment_deco_ceiling)
-
-            # END calc_deco_ceiling
             if deco_ceiling_depth > next_stop: # TODO Build this into the loop condition
                 self.Segment_Time = settings.Minimum_Deco_Stop_Time
                 time_counter = temp_segment_time
@@ -1378,31 +1329,10 @@ class DiveState(object):
                 # as a result of allowing a certain number of excess bubbles to form.
                 Deco_Phase_Volume_Time = self.Run_Time - Run_Time_Start_of_Deco_Zone
 
-                # START calc_surface_phase_volume_time
-
-                # Purpose: This subprogram computes the surface portion of the total phase
-                # volume time.  This is the time factored out of the integration of
-                # supersaturation gradient x time over the surface interval.  The VPM
-                # considers the gradients that allow bubbles to form or to drive bubble
-                # growth both in the water and on the surface after the dive.
-
-                # This subroutine is a new development to the VPM algorithm in that it
-                # computes the time course of supersaturation gradients on the surface
-                # when both helium and nitrogen are present.  Refer to separate write-up
-                # for a more detailed explanation of this algorithm.
-
-                surface_inspired_n2_pressure = (self.Barometric_Pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
-                for i in COMPARTMENT_RANGE:
-                    if self.Nitrogen_Pressure[i] > surface_inspired_n2_pressure:
-                        Surface_Phase_Volume_Time[i] = (self.Helium_Pressure[i] / self.Helium_Time_Constant[i] + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i]) / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-                    elif (self.Nitrogen_Pressure[i] <= surface_inspired_n2_pressure) and (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] >= surface_inspired_n2_pressure):
-                        decay_time_to_zero_gradient = 1.0 / (self.Nitrogen_Time_Constant[i] - self.Helium_Time_Constant[i]) * log((surface_inspired_n2_pressure - self.Nitrogen_Pressure[i]) / self.Helium_Pressure[i])
-                        integral_gradient_x_time = self.Helium_Pressure[i] / self.Helium_Time_Constant[i] * (1.0 - exp(-self.Helium_Time_Constant[i] * decay_time_to_zero_gradient)) + (self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure) / self.Nitrogen_Time_Constant[i] * (1.0 - exp(-self.Nitrogen_Time_Constant[i] * decay_time_to_zero_gradient))
-                        Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] - surface_inspired_n2_pressure)
-                    else:
-                        Surface_Phase_Volume_Time[i] = 0.0
-
-                # END calc_surface_phase_volume_time
+                Surface_Phase_Volume_Time = calc_surface_phase_volume_time( Surface_Phase_Volume_Time
+                                                                          , self.Helium_Pressure, self.Nitrogen_Pressure
+                                                                          , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
+                                                                          , self.Barometric_Pressure, settings)
 
                 for i in COMPARTMENT_RANGE:
                     Phase_Volume_Time[i] = Deco_Phase_Volume_Time + Surface_Phase_Volume_Time[i]
@@ -1730,8 +1660,6 @@ def calc_max_actual_gradient(max_actual_gradient, deco_stop_depth, helium_pressu
   # If there is a repetitive dive, this will be used later in the VPM
   # Repetitive Algorithm to adjust the values for critical radii.
 
-  # START self.calc_max_actual_gradient
-
   # Purpose: This subprogram calculates the actual supersaturation gradient
   # obtained in each compartment as a result of the ascent profile during
   # decompression.  Similar to the concept with crushing pressure, the
@@ -1766,8 +1694,86 @@ def calc_max_actual_gradient(max_actual_gradient, deco_stop_depth, helium_pressu
   return max_actual_gradient
 
 
+def calc_deco_ceiling(helium_pressure, nitrogen_pressure, deco_gradient_he, deco_gradient_n2, barometric_pressure, settings):
+  # Purpose: This subprogram calculates the deco ceiling (the safe ascent
+  # depth) in each compartment, based on the allowable "deco gradients"
+  # computed in the Boyle's Law Compensation subroutine, and then finds the
+  # deepest deco ceiling across all compartments.  This deepest value
+  # (Deco Ceiling Depth) is then used by the Decompression Stop subroutine
+  # to determine the actual deco schedule.
+
+  # Since there are two sets of deco gradients being tracked, one for
+  # helium and one for nitrogen, a "weighted allowable gradient" must be
+  # computed each time based on the proportions of helium and nitrogen in
+  # each compartment.  This proportioning follows the methodology of
+  # Buhlmann/Keller.  If there is no helium and nitrogen in the compartment,
+  # such as after extended periods of oxygen breathing, then the minimum value
+  # across both gases will be used.  It is important to note that if a
+  # compartment is empty of helium and nitrogen, then the weighted allowable
+  # gradient formula cannot be used since it will result in division by zero.
+
+  compartment_deco_ceiling = [0.0] * NUM_COMPARTMENTS
+
+  gas_loading = 0.0
+  tolerated_ambient_pressure = 0.0
+  weighted_allowable_gradient = 0.0
+
+  for i in COMPARTMENT_RANGE:
+      gas_loading = helium_pressure[i] + nitrogen_pressure[i]
+
+      if gas_loading > 0.0:
+          weighted_allowable_gradient = (deco_gradient_he[i] * helium_pressure[i] + deco_gradient_n2[i] * nitrogen_pressure[i]) / (helium_pressure[i] + nitrogen_pressure[i])
+          tolerated_ambient_pressure = (gas_loading + settings.Constant_Pressure_Other_Gases) - weighted_allowable_gradient
+      else:
+          weighted_allowable_gradient = min(deco_gradient_he[i], deco_gradient_n2[i])
+          tolerated_ambient_pressure = settings.Constant_Pressure_Other_Gases - weighted_allowable_gradient
+
+      # The tolerated ambient pressure cannot be less than zero absolute, i.e.,
+      # the vacuum of outer space!
+      if tolerated_ambient_pressure < 0.0:
+          tolerated_ambient_pressure = 0.0
+
+      # The Deco Ceiling Depth is computed in a loop after all of the individual
+      # compartment deco ceilings have been calculated.  It is important that the
+      # Deco Ceiling Depth (max deco ceiling across all compartments) only be
+      # extracted from the compartment values and not be compared against some
+      # initialization value.  For example, if MAX(deco_ceiling_depth . .) was
+      # compared against zero, this could cause a program lockup because sometimes
+      # the Deco Ceiling Depth needs to be negative (but not less than absolute
+      # zero) in order to decompress to the last stop at zero depth.
+
+      compartment_deco_ceiling[i] = tolerated_ambient_pressure - barometric_pressure
+
+  return max(compartment_deco_ceiling)
 
 
+def calc_surface_phase_volume_time( Surface_Phase_Volume_Time
+                                  , helium_pressure, nitrogen_pressure
+                                  , helium_time_constant, nitrogen_time_constant
+                                  , barometric_pressure, settings):
+  # Purpose: This subprogram computes the surface portion of the total phase
+  # volume time.  This is the time factored out of the integration of
+  # supersaturation gradient x time over the surface interval.  The VPM
+  # considers the gradients that allow bubbles to form or to drive bubble
+  # growth both in the water and on the surface after the dive.
+
+  # This subroutine is a new development to the VPM algorithm in that it
+  # computes the time course of supersaturation gradients on the surface
+  # when both helium and nitrogen are present.  Refer to separate write-up
+  # for a more detailed explanation of this algorithm.
+
+  surface_inspired_n2_pressure = (barometric_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
+  for i in COMPARTMENT_RANGE:
+      if nitrogen_pressure[i] > surface_inspired_n2_pressure:
+          Surface_Phase_Volume_Time[i] = (helium_pressure[i] / helium_time_constant[i] + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / nitrogen_time_constant[i]) / (helium_pressure[i] + nitrogen_pressure[i] - surface_inspired_n2_pressure)
+      elif (nitrogen_pressure[i] <= surface_inspired_n2_pressure) and (helium_pressure[i] + nitrogen_pressure[i] >= surface_inspired_n2_pressure):
+          decay_time_to_zero_gradient = 1.0 / (nitrogen_time_constant[i] - helium_time_constant[i]) * log((surface_inspired_n2_pressure - nitrogen_pressure[i]) / helium_pressure[i])
+          integral_gradient_x_time = helium_pressure[i] / helium_time_constant[i] * (1.0 - exp(-helium_time_constant[i] * decay_time_to_zero_gradient)) + (nitrogen_pressure[i] - surface_inspired_n2_pressure) / nitrogen_time_constant[i] * (1.0 - exp(-nitrogen_time_constant[i] * decay_time_to_zero_gradient))
+          Surface_Phase_Volume_Time[i] = integral_gradient_x_time / (helium_pressure[i] + nitrogen_pressure[i] - surface_inspired_n2_pressure)
+      else:
+          Surface_Phase_Volume_Time[i] = 0.0
+
+  return Surface_Phase_Volume_Time
 
 
 def schreiner_equation(initial_inspired_gas_pressure, rate_change_insp_gas_pressure, interval_time, gas_time_constant, initial_gas_pressure):
