@@ -583,140 +583,16 @@ class DiveState(object):
                     self.Segment_Number += 1
 
                     if profile.ending_depth > profile.starting_depth:
-                        # START calc_crushing_pressure
-
-                        # Purpose: Compute the effective "crushing pressure" in each compartment as
-                        # a result of descent segment(s).  The crushing pressure is the gradient
-                        # (difference in pressure) between the outside ambient pressure and the
-                        # gas tension inside a VPM nucleus (bubble seed).  This gradient acts to
-                        # reduce (shrink) the radius smaller than its initial value at the surface.
-                        # This phenomenon has important ramifications because the smaller the radius
-                        # of a VPM nucleus, the greater the allowable supersaturation gradient upon
-                        # ascent.  Gas loading (uptake) during descent, especially in the fast
-                        # compartments, will reduce the magnitude of the crushing pressure.  The
-                        # crushing pressure is not cumulative over a multi-level descent.  It will
-                        # be the maximum value obtained in any one discrete segment of the overall
-                        # descent.  Thus, the program must compute and store the maximum crushing
-                        # pressure for each compartment that was obtained across all segments of
-                        # the descent profile.
-
-                        # The calculation of crushing pressure will be different depending on
-                        # whether or not the gradient is in the VPM permeable range (gas can diffuse
-                        # across skin of VPM nucleus) or the VPM impermeable range (molecules in
-                        # skin of nucleus are squeezed together so tight that gas can no longer
-                        # diffuse in or out of nucleus; the gas becomes trapped and further resists
-                        # the crushing pressure).  The solution for crushing pressure in the VPM
-                        # permeable range is a simple linear equation.  In the VPM impermeable
-                        # range, a cubic equation must be solved using a numerical method.
-
-                        # Separate crushing pressures are tracked for helium and nitrogen because
-                        # they can have different critical radii.  The crushing pressures will be
-                        # the same for helium and nitrogen in the permeable range of the model, but
-                        # they will start to diverge in the impermeable range.  This is due to
-                        # the differences between starting radius, radius at the onset of
-                        # impermeability, and radial compression in the impermeable range.
-
-                        # First, convert the Gradient for Onset of Impermeability from units of
-                        # atmospheres to diving pressure units (either fsw or msw) and to Pascals
-                        # (SI units).  The reason that the Gradient for Onset of Impermeability is
-                        # given in the program settings in units of atmospheres is because that is
-                        # how it was reported in the original research papers by Yount and
-                        # colleagues.
-
-                        gradient_onset_of_imperm = settings.Gradient_Onset_of_Imperm_Atm * settings.Units.toUnitsFactor()  # convert to diving units
-                        gradient_onset_of_imperm_pa = settings.Gradient_Onset_of_Imperm_Atm * ATM     # convert to Pascals
-
-                        # Assign values of starting and ending ambient pressures for descent segment
-
-                        starting_ambient_pressure = profile.starting_depth + self.Barometric_Pressure
-                        ending_ambient_pressure = profile.ending_depth + self.Barometric_Pressure
-
-                        # MAIN LOOP WITH NESTED DECISION TREE
-                        # For each compartment, the program computes the starting and ending
-                        # gas tensions and gradients.  The VPM is different than some dissolved gas
-                        # algorithms, Buhlmann for example, in that it considers the pressure due to
-                        # oxygen, carbon dioxide, and water vapor in each compartment in addition to
-                        # the inert gases helium and nitrogen.  These "other gases" are included in
-                        # the calculation of gas tensions and gradients.
-
-                        for i in COMPARTMENT_RANGE:
-                            starting_gas_tension = self.Initial_Helium_Pressure[i] + self.Initial_Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases
-
-                            starting_gradient = starting_ambient_pressure - starting_gas_tension
-
-                            ending_gas_tension = self.Helium_Pressure[i] + self.Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases
-
-                            ending_gradient = ending_ambient_pressure - ending_gas_tension
-
-                            # Compute radius at onset of impermeability for helium and nitrogen
-                            # critical radii
-
-                            radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
-
-                            radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
-
-                            # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
-                            # Crushing pressures will be the same for helium and nitrogen
-                            if ending_gradient <= gradient_onset_of_imperm:
-                                crushing_pressure_he = ending_ambient_pressure - ending_gas_tension
-                                crushing_pressure_n2 = ending_ambient_pressure - ending_gas_tension
-
-                            # SECOND BRANCH OF DECISION TREE - IMPERMEABLE RANGE
-                            # Both the ambient pressure and the gas tension at the onset of
-                            # impermeability must be computed in order to properly solve for the ending
-                            # radius and resultant crushing pressure.  The first decision block
-                            # addresses the special case when the starting gradient just happens to be
-                            # equal to the gradient for onset of impermeability (not very likely!).
-
-                            # if ending_gradient > gradient_onset_of_imperm:
-                            else:
-
-                                if starting_gradient == gradient_onset_of_imperm:
-                                    Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
-                                    Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
-                                # In most cases, a subroutine will be called to find these values using a
-                                # numerical method.
-                                if starting_gradient < gradient_onset_of_imperm:
-                                    onset = onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
-                                                                   , self.Fraction_Helium[self.Mix_Number - 1]
-                                                                   , self.Fraction_Nitrogen[self.Mix_Number - 1]
-                                                                   , self.Initial_Helium_Pressure[i]
-                                                                   , self.Initial_Nitrogen_Pressure[i]
-                                                                   , self.Helium_Time_Constant[i]
-                                                                   , self.Nitrogen_Time_Constant[i]
-                                                                   , profile, settings)
-
-                                    Amb_Pressure_Onset_of_Imperm[i] = onset[0] # mid_range_ambient_pressure
-                                    Gas_Tension_Onset_of_Imperm[i]  = onset[1] # gas_tension_at_mid_range
-
-                                # Next, using the values for ambient pressure and gas tension at the onset
-                                # of impermeability, the equations are set up to process the calculations
-                                # through the radius root finder subroutine.  This subprogram will find the
-                                # root (solution) to the cubic equation using a numerical method.  In order
-                                # to do this efficiently, the equations are placed in the form
-                                # Ar^3 - Br^2 - C = 0, where r is the ending radius after impermeable
-                                # compression.  The coefficients A, B, and C for helium and nitrogen are
-                                # computed and passed to the subroutine as arguments.  The high and low
-                                # bounds to be used by the numerical method of the subroutine are also
-                                # computed (see separate page posted on Deco List ftp site entitled
-                                # "VPM: Solving for radius in the impermeable regime").  The subprogram
-                                # will return the value of the ending radius and then the crushing
-                                # pressures for helium and nitrogen can be calculated.
-                                ending_ambient_pressure_pa = (ending_ambient_pressure / settings.Units.toUnitsFactor()) * ATM
-
-                                amb_press_onset_of_imperm_pa = (Amb_Pressure_Onset_of_Imperm[i] / settings.Units.toUnitsFactor()) * ATM
-
-                                gas_tension_onset_of_imperm_pa = (Gas_Tension_Onset_of_Imperm[i] / settings.Units.toUnitsFactor()) * ATM
-
-                                crushing_pressure_he = crushing_pressure_helper(settings, radius_onset_of_imperm_he, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
-
-                                crushing_pressure_n2 = crushing_pressure_helper(settings, radius_onset_of_imperm_n2, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
-
-                            # UPDATE VALUES OF MAX CRUSHING PRESSURE IN Object ARRAYS
-                            Max_Crushing_Pressure_He[i] = max(Max_Crushing_Pressure_He[i], crushing_pressure_he)
-                            Max_Crushing_Pressure_N2[i] = max(Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
-
-                        # END calc_crushing_pressure
+                        pressure = calc_crushing_pressure( self.Initial_Helium_Pressure, self.Initial_Nitrogen_Pressure
+                                                         , self.Helium_Pressure, self.Nitrogen_Pressure
+                                                         , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
+                                                         , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                                                         , Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
+                                                         , Amb_Pressure_Onset_of_Imperm, Gas_Tension_Onset_of_Imperm
+                                                         , self.Fraction_Helium[self.Mix_Number - 1], self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                                         , self.Barometric_Pressure, profile, settings)
+                        Max_Crushing_Pressure_He = pressure[0]
+                        Max_Crushing_Pressure_N2 = pressure[1]
 
                     self.output_object.add_dive_profile_entry_descent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.starting_depth, profile.ending_depth, profile.rate)
 
@@ -1793,6 +1669,150 @@ def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
         Depth_Start_of_Deco_Zone = max(Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
 
     return Depth_Start_of_Deco_Zone
+
+def calc_crushing_pressure( Initial_Helium_Pressure, Initial_Nitrogen_Pressure
+                          , Helium_Pressure, Nitrogen_Pressure
+                          , Helium_Time_Constant, Nitrogen_Time_Constant
+                          , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                          , Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
+                          , Amb_Pressure_Onset_of_Imperm, Gas_Tension_Onset_of_Imperm
+                          , Fraction_Helium, Fraction_Nitrogen
+                          , Barometric_Pressure, profile, settings):
+    # Purpose: Compute the effective "crushing pressure" in each compartment as
+    # a result of descent segment(s).  The crushing pressure is the gradient
+    # (difference in pressure) between the outside ambient pressure and the
+    # gas tension inside a VPM nucleus (bubble seed).  This gradient acts to
+    # reduce (shrink) the radius smaller than its initial value at the surface.
+    # This phenomenon has important ramifications because the smaller the radius
+    # of a VPM nucleus, the greater the allowable supersaturation gradient upon
+    # ascent.  Gas loading (uptake) during descent, especially in the fast
+    # compartments, will reduce the magnitude of the crushing pressure.  The
+    # crushing pressure is not cumulative over a multi-level descent.  It will
+    # be the maximum value obtained in any one discrete segment of the overall
+    # descent.  Thus, the program must compute and store the maximum crushing
+    # pressure for each compartment that was obtained across all segments of
+    # the descent profile.
+
+    # The calculation of crushing pressure will be different depending on
+    # whether or not the gradient is in the VPM permeable range (gas can diffuse
+    # across skin of VPM nucleus) or the VPM impermeable range (molecules in
+    # skin of nucleus are squeezed together so tight that gas can no longer
+    # diffuse in or out of nucleus; the gas becomes trapped and further resists
+    # the crushing pressure).  The solution for crushing pressure in the VPM
+    # permeable range is a simple linear equation.  In the VPM impermeable
+    # range, a cubic equation must be solved using a numerical method.
+
+    # Separate crushing pressures are tracked for helium and nitrogen because
+    # they can have different critical radii.  The crushing pressures will be
+    # the same for helium and nitrogen in the permeable range of the model, but
+    # they will start to diverge in the impermeable range.  This is due to
+    # the differences between starting radius, radius at the onset of
+    # impermeability, and radial compression in the impermeable range.
+
+    # First, convert the Gradient for Onset of Impermeability from units of
+    # atmospheres to diving pressure units (either fsw or msw) and to Pascals
+    # (SI units).  The reason that the Gradient for Onset of Impermeability is
+    # given in the program settings in units of atmospheres is because that is
+    # how it was reported in the original research papers by Yount and
+    # colleagues.
+
+    gradient_onset_of_imperm = settings.Gradient_Onset_of_Imperm_Atm * settings.Units.toUnitsFactor()  # convert to diving units
+    gradient_onset_of_imperm_pa = settings.Gradient_Onset_of_Imperm_Atm * ATM     # convert to Pascals
+
+    # Assign values of starting and ending ambient pressures for descent segment
+
+    starting_ambient_pressure = profile.starting_depth + Barometric_Pressure
+    ending_ambient_pressure = profile.ending_depth + Barometric_Pressure
+
+    # MAIN LOOP WITH NESTED DECISION TREE
+    # For each compartment, the program computes the starting and ending
+    # gas tensions and gradients.  The VPM is different than some dissolved gas
+    # algorithms, Buhlmann for example, in that it considers the pressure due to
+    # oxygen, carbon dioxide, and water vapor in each compartment in addition to
+    # the inert gases helium and nitrogen.  These "other gases" are included in
+    # the calculation of gas tensions and gradients.
+
+    for i in COMPARTMENT_RANGE:
+        starting_gas_tension = Initial_Helium_Pressure[i] + Initial_Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases
+
+        starting_gradient = starting_ambient_pressure - starting_gas_tension
+
+        ending_gas_tension = Helium_Pressure[i] + Nitrogen_Pressure[i] + settings.Constant_Pressure_Other_Gases
+
+        ending_gradient = ending_ambient_pressure - ending_gas_tension
+
+        # Compute radius at onset of impermeability for helium and nitrogen
+        # critical radii
+
+        radius_onset_of_imperm_he = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
+
+        radius_onset_of_imperm_n2 = 1.0 / (gradient_onset_of_imperm_pa / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
+
+        # FIRST BRANCH OF DECISION TREE - PERMEABLE RANGE
+        # Crushing pressures will be the same for helium and nitrogen
+        if ending_gradient <= gradient_onset_of_imperm:
+            crushing_pressure_he = ending_ambient_pressure - ending_gas_tension
+            crushing_pressure_n2 = ending_ambient_pressure - ending_gas_tension
+
+        # SECOND BRANCH OF DECISION TREE - IMPERMEABLE RANGE
+        # Both the ambient pressure and the gas tension at the onset of
+        # impermeability must be computed in order to properly solve for the ending
+        # radius and resultant crushing pressure.  The first decision block
+        # addresses the special case when the starting gradient just happens to be
+        # equal to the gradient for onset of impermeability (not very likely!).
+
+        # if ending_gradient > gradient_onset_of_imperm:
+        else:
+
+            if starting_gradient == gradient_onset_of_imperm:
+                Amb_Pressure_Onset_of_Imperm[i] = starting_ambient_pressure
+                Gas_Tension_Onset_of_Imperm[i] = starting_gas_tension
+            # In most cases, a subroutine will be called to find these values using a
+            # numerical method.
+            if starting_gradient < gradient_onset_of_imperm:
+                onset = onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
+                                               , Fraction_Helium
+                                               , Fraction_Nitrogen
+                                               , Initial_Helium_Pressure[i]
+                                               , Initial_Nitrogen_Pressure[i]
+                                               , Helium_Time_Constant[i]
+                                               , Nitrogen_Time_Constant[i]
+                                               , profile, settings)
+
+                Amb_Pressure_Onset_of_Imperm[i] = onset[0] # mid_range_ambient_pressure
+                Gas_Tension_Onset_of_Imperm[i]  = onset[1] # gas_tension_at_mid_range
+
+            # Next, using the values for ambient pressure and gas tension at the onset
+            # of impermeability, the equations are set up to process the calculations
+            # through the radius root finder subroutine.  This subprogram will find the
+            # root (solution) to the cubic equation using a numerical method.  In order
+            # to do this efficiently, the equations are placed in the form
+            # Ar^3 - Br^2 - C = 0, where r is the ending radius after impermeable
+            # compression.  The coefficients A, B, and C for helium and nitrogen are
+            # computed and passed to the subroutine as arguments.  The high and low
+            # bounds to be used by the numerical method of the subroutine are also
+            # computed (see separate page posted on Deco List ftp site entitled
+            # "VPM: Solving for radius in the impermeable regime").  The subprogram
+            # will return the value of the ending radius and then the crushing
+            # pressures for helium and nitrogen can be calculated.
+            ending_ambient_pressure_pa = (ending_ambient_pressure / settings.Units.toUnitsFactor()) * ATM
+
+            amb_press_onset_of_imperm_pa = (Amb_Pressure_Onset_of_Imperm[i] / settings.Units.toUnitsFactor()) * ATM
+
+            gas_tension_onset_of_imperm_pa = (Gas_Tension_Onset_of_Imperm[i] / settings.Units.toUnitsFactor()) * ATM
+
+            crushing_pressure_he = crushing_pressure_helper(settings, radius_onset_of_imperm_he, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
+
+            crushing_pressure_n2 = crushing_pressure_helper(settings, radius_onset_of_imperm_n2, ending_ambient_pressure_pa, amb_press_onset_of_imperm_pa, gas_tension_onset_of_imperm_pa, gradient_onset_of_imperm_pa)
+
+        # UPDATE VALUES OF MAX CRUSHING PRESSURE IN Object ARRAYS
+        Max_Crushing_Pressure_He[i] = max(Max_Crushing_Pressure_He[i], crushing_pressure_he)
+        Max_Crushing_Pressure_N2[i] = max(Max_Crushing_Pressure_N2[i], crushing_pressure_n2)
+
+    return (Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2)
+
+
+
 
 
 
