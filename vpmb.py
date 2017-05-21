@@ -46,6 +46,18 @@ NITROGEN_HALF_TIMES = [5.0, 8.0, 12.5, 18.5, 27.0, 38.3, 54.3, 77.0, 109.0
                       ,146.0, 187.0, 239.0, 305.0, 390.0, 498.0, 635.0]
 
 
+HELIUM_TIME_CONSTANTS = mkHeTimeConsts()
+
+def mkHeTimeConsts():
+    consts = [0.0] * NUM_COMPARTMENTS
+
+    for i in COMPARTMENT_RANGE:
+        consts[i] = log(2.0) / HELIUM_HALF_TIMES[i]
+
+    return consts
+            # self.Nitrogen_Time_Constant[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
+
+
 class AltitudeException(Exception):
     """Thrown when altitude is invalid, or diver acclimatized is invalid."""
     def __init__(self, value):
