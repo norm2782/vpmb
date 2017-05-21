@@ -612,32 +612,17 @@ class DiveState(object):
                 elif profile.profile_code == ProfileCode.Constant:
                     self.Mix_Number = profile.gasmix
 
-                    # START gas_loadings_constant_depth
+                    loadings = gas_loadings_constant_depth( self.Helium_Pressure, self.Nitrogen_Pressure
+                                                          , self.Fraction_Helium[self.Mix_Number - 1]
+                                                          , self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                                          , self.Barometric_Pressure, self.Run_Time, profile, settings);
+                    self.Helium_Pressure   = loadings[0]
+                    self.Nitrogen_Pressure = loadings[1]
+                    self.Ending_Ambient_Pressure = loadings[2]
+                    self.Segment_Time      = loadings[3]
 
-                    # Purpose: This subprogram applies the Haldane equation to update the
-                    # gas loadings (partial pressures of helium and nitrogen) in the half-time
-                    # compartments for a segment at constant depth.
-
-                    self.Segment_Time = profile.run_time_at_end_of_segment - self.Run_Time
                     self.Run_Time = profile.run_time_at_end_of_segment
                     self.Segment_Number += 1
-                    ambient_pressure = profile.depth + self.Barometric_Pressure
-
-                    inspired_helium_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-
-                    inspired_nitrogen_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-                    self.Ending_Ambient_Pressure = ambient_pressure
-
-                    for i in COMPARTMENT_RANGE:
-                        temp_helium_pressure = self.Helium_Pressure[i]
-                        temp_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-                        self.Helium_Pressure[i] = haldane_equation(temp_helium_pressure, inspired_helium_pressure, HELIUM_TIME_CONSTANTS[i], self.Segment_Time)
-
-                        self.Nitrogen_Pressure[i] = haldane_equation(temp_nitrogen_pressure, inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], self.Segment_Time)
-
-                    # END gas_loadings_constant_depth
 
                     self.output_object.add_dive_profile_entry_ascent(self.Segment_Number, self.Segment_Time, self.Run_Time, self.Mix_Number, profile.depth)
                 else:
@@ -1862,6 +1847,28 @@ def nuclear_regeneration( Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
     return ( Regenerated_Radius_He, Regenerated_Radius_N2
            , Adjusted_Crushing_Pressure_He, Adjusted_Crushing_Pressure_N2
            )
+
+def gas_loadings_constant_depth( Helium_Pressure, Nitrogen_Pressure
+                               , Fraction_Helium, Fraction_Nitrogen
+                               , Barometric_Pressure, Run_Time, profile, settings):
+    # Purpose: This subprogram applies the Haldane equation to update the
+    # gas loadings (partial pressures of helium and nitrogen) in the half-time
+    # compartments for a segment at constant depth.
+
+    Segment_Time = profile.run_time_at_end_of_segment - Run_Time
+
+    ambient_pressure = profile.depth + Barometric_Pressure
+
+    inspired_helium_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Helium
+
+    inspired_nitrogen_pressure = (ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Nitrogen
+
+    for i in COMPARTMENT_RANGE:
+        Helium_Pressure[i]   = haldane_equation(Helium_Pressure[i], inspired_helium_pressure, HELIUM_TIME_CONSTANTS[i], Segment_Time)
+        Nitrogen_Pressure[i] = haldane_equation(Nitrogen_Pressure[i], inspired_nitrogen_pressure, NITROGEN_TIME_CONSTANTS[i], Segment_Time)
+
+    return (Helium_Pressure, Nitrogen_Pressure, ambient_pressure, Segment_Time)
+
 
 
 
