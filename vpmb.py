@@ -577,9 +577,9 @@ class DiveState(object):
                     self.Nitrogen_Pressure = pressures[3]
 
                     self.Segment_Time = pressures[4]
-                    self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
-
                     self.Run_Time += pressures[4]
+
+                    self.Ending_Ambient_Pressure = profile.ending_depth + self.Barometric_Pressure
                     self.Segment_Number += 1
 
                     if profile.ending_depth > profile.starting_depth:
