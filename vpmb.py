@@ -278,9 +278,6 @@ class DiveState(object):
         # GLOBAL ARRAYS
 
         # Float
-        HELIUM_TIME_CONSTANTS = [0.0] * NUM_COMPARTMENTS
-        NITROGEN_TIME_CONSTANTS = [0.0] * NUM_COMPARTMENTS
-
         self.Helium_Pressure = [0.0] * NUM_COMPARTMENTS
         self.Nitrogen_Pressure = [0.0] * NUM_COMPARTMENTS
 
@@ -408,8 +405,6 @@ class DiveState(object):
 
 
         for i in COMPARTMENT_RANGE:
-            HELIUM_TIME_CONSTANTS[i] = log(2.0) / HELIUM_HALF_TIMES[i]
-            NITROGEN_TIME_CONSTANTS[i] = log(2.0) / NITROGEN_HALF_TIMES[i]
             Initial_Critical_Radius_N2[i] = settings.Critical_Radius_N2_Microns * 1.0E-6
             Initial_Critical_Radius_He[i] = settings.Critical_Radius_He_Microns * 1.0E-6
 
