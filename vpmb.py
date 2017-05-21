@@ -909,94 +909,12 @@ class DiveState(object):
             # it is information to tell the diver where to start putting on the brakes
             # during ascent.  This should be prominently displayed by any deco program.
 
-            # START calc_start_of_deco_zone(starting_depth, rate)
-
-            # Purpose: This subroutine uses the Bisection Method to find the depth at
-            # which the leading compartment just enters the decompression zone.
-            # Source:  "Numerical Recipes in Fortran 77", Cambridge University Press,
-            # 1992.
-
-            # First initialize some variables
-            Depth_Start_of_Deco_Zone = 0.0
-            starting_ambient_pressure = starting_depth + self.Barometric_Pressure
-
-            initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Helium[self.Mix_Number - 1]
-            initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-            helium_rate = rate * self.Fraction_Helium[self.Mix_Number - 1]
-            nitrogen_rate = rate * self.Fraction_Nitrogen[self.Mix_Number - 1]
-
-            # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
-            # AND CHECK TO MAKE SURE THAT THE ROOT WILL BE WITHIN BOUNDS.  PROCESS
-            # EACH COMPARTMENT INDIVIDUALLY AND FIND THE MAXIMUM DEPTH ACROSS ALL
-            # COMPARTMENTS (LEADING COMPARTMENT)
-            # In this case, we are solving for time - the time when the gas tension in
-            # the compartment will be equal to ambient pressure.  The low bound for time
-            # is set at zero and the high bound is set at the time it would take to
-            # ascend to zero ambient pressure (absolute).  Since the ascent rate is
-            # negative, a multiplier of -1.0 is used to make the time positive.  The
-            # desired point when gas tension equals ambient pressure is found at a time
-            # somewhere between these endpoints.  The algorithm checks to make sure that
-            # the solution lies in between these bounds by first computing the low bound
-            # and high bound function values.
-
-            low_bound = 0.0
-            high_bound = -1.0 * (starting_ambient_pressure / rate)
-
-            for i in COMPARTMENT_RANGE:
-                initial_helium_pressure = self.Helium_Pressure[i]
-                initial_nitrogen_pressure = self.Nitrogen_Pressure[i]
-
-                function_at_low_bound = initial_helium_pressure + initial_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - starting_ambient_pressure
-                high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, self.Helium_Time_Constant[i], initial_helium_pressure)
-                high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
-                function_at_high_bound = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
-
-                if (function_at_high_bound * function_at_low_bound) >= 0.0:
-                    raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
-
-                # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
-                # THE DESIRED ACCURACY IS FOUND
-                # Note: the program allows for up to 100 iterations.  Normally an exit will
-                # be made from the loop well before that number.  If, for some reason, the
-                # program exceeds 100 iterations, there will be a pause to alert the user.
-
-                if function_at_low_bound < 0.0:
-                    time_to_start_of_deco_zone = low_bound
-                    differential_change = high_bound - low_bound
-                else:
-                    time_to_start_of_deco_zone = high_bound
-                    differential_change = low_bound - high_bound
-
-                for j in range(100):
-                    last_diff_change = differential_change
-                    differential_change = last_diff_change * 0.5
-
-                    mid_range_time = time_to_start_of_deco_zone + differential_change
-                    mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, self.Helium_Time_Constant[i], initial_helium_pressure)
-                    mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, self.Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
-                    function_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - (starting_ambient_pressure + rate * mid_range_time)
-
-                    if function_at_mid_range <= 0.0:
-                        time_to_start_of_deco_zone = mid_range_time
-
-                    if abs(differential_change) < 1.0E-3 or function_at_mid_range == 0.0:
-                        break
-
-                    if j == 100:
-                        raise MaxIterationException('ERROR! ROOT SEARCH EXCEEDED MAXIMUM ITERATIONS')
-
-                # When a solution with the desired accuracy is found, the program jumps out
-                # of the loop to Line 170 and assigns the solution value for the individual
-                # compartment.
-
-                cpt_depth_start_of_deco_zone = (starting_ambient_pressure + rate * time_to_start_of_deco_zone) - self.Barometric_Pressure
-                # The overall solution will be the compartment with the maximum depth where
-                # gas tension equals ambient pressure (leading compartment).
-
-                Depth_Start_of_Deco_Zone = max(Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
-
-            # END calc_start_of_deco_zone
+            Depth_Start_of_Deco_Zone = calc_start_of_deco_zone( self.Fraction_Helium[self.Mix_Number - 1]
+                                                              , self.Fraction_Nitrogen[self.Mix_Number - 1]
+                                                              , self.Helium_Pressure, self.Nitrogen_Pressure
+                                                              , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
+                                                              , starting_depth, self.Barometric_Pressure, rate, settings
+                                                              )
 
             # TODO Is this used at all?
             # Deepest_Possible_Stop_Depth = 0.0
@@ -1781,6 +1699,100 @@ def onset_of_impermeability( starting_ambient_pressure, ending_ambient_pressure
             break
 
     return (mid_range_ambient_pressure, gas_tension_at_mid_range)
+
+
+def calc_start_of_deco_zone( Fraction_Helium, Fraction_Nitrogen
+                           , Helium_Pressure, Nitrogen_Pressure
+                           , Helium_Time_Constant, Nitrogen_Time_Constant
+                           , starting_depth, barometric_pressure, rate
+                           , settings
+                           ):
+    # Purpose: This subroutine uses the Bisection Method to find the depth at
+    # which the leading compartment just enters the decompression zone.
+    # Source:  "Numerical Recipes in Fortran 77", Cambridge University Press,
+    # 1992.
+
+    # First initialize some variables
+    Depth_Start_of_Deco_Zone = 0.0
+    starting_ambient_pressure = starting_depth + barometric_pressure
+
+    initial_inspired_he_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Helium
+    initial_inspired_n2_pressure = (starting_ambient_pressure - settings.Units.toWaterVaporPressure()) * Fraction_Nitrogen
+
+    helium_rate = rate * Fraction_Helium
+    nitrogen_rate = rate * Fraction_Nitrogen
+
+    # ESTABLISH THE BOUNDS FOR THE ROOT SEARCH USING THE BISECTION METHOD
+    # AND CHECK TO MAKE SURE THAT THE ROOT WILL BE WITHIN BOUNDS.  PROCESS
+    # EACH COMPARTMENT INDIVIDUALLY AND FIND THE MAXIMUM DEPTH ACROSS ALL
+    # COMPARTMENTS (LEADING COMPARTMENT)
+    # In this case, we are solving for time - the time when the gas tension in
+    # the compartment will be equal to ambient pressure.  The low bound for time
+    # is set at zero and the high bound is set at the time it would take to
+    # ascend to zero ambient pressure (absolute).  Since the ascent rate is
+    # negative, a multiplier of -1.0 is used to make the time positive.  The
+    # desired point when gas tension equals ambient pressure is found at a time
+    # somewhere between these endpoints.  The algorithm checks to make sure that
+    # the solution lies in between these bounds by first computing the low bound
+    # and high bound function values.
+
+    low_bound = 0.0
+    high_bound = -1.0 * (starting_ambient_pressure / rate)
+
+    for i in COMPARTMENT_RANGE:
+        initial_helium_pressure = Helium_Pressure[i]
+        initial_nitrogen_pressure = Nitrogen_Pressure[i]
+
+        function_at_low_bound = initial_helium_pressure + initial_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - starting_ambient_pressure
+        high_bound_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, high_bound, Helium_Time_Constant[i], initial_helium_pressure)
+        high_bound_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, high_bound, Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+        function_at_high_bound = high_bound_helium_pressure + high_bound_nitrogen_pressure + settings.Constant_Pressure_Other_Gases
+
+        if (function_at_high_bound * function_at_low_bound) >= 0.0:
+            raise RootException("ERROR! ROOT IS NOT WITHIN BRACKETS")
+
+        # APPLY THE BISECTION METHOD IN SEVERAL ITERATIONS UNTIL A SOLUTION WITH
+        # THE DESIRED ACCURACY IS FOUND
+        # Note: the program allows for up to 100 iterations.  Normally an exit will
+        # be made from the loop well before that number.  If, for some reason, the
+        # program exceeds 100 iterations, there will be a pause to alert the user.
+
+        if function_at_low_bound < 0.0:
+            time_to_start_of_deco_zone = low_bound
+            differential_change = high_bound - low_bound
+        else:
+            time_to_start_of_deco_zone = high_bound
+            differential_change = low_bound - high_bound
+
+        for j in range(100):
+            last_diff_change = differential_change
+            differential_change = last_diff_change * 0.5
+
+            mid_range_time = time_to_start_of_deco_zone + differential_change
+            mid_range_helium_pressure = schreiner_equation(initial_inspired_he_pressure, helium_rate, mid_range_time, Helium_Time_Constant[i], initial_helium_pressure)
+            mid_range_nitrogen_pressure = schreiner_equation(initial_inspired_n2_pressure, nitrogen_rate, mid_range_time, Nitrogen_Time_Constant[i], initial_nitrogen_pressure)
+            function_at_mid_range = mid_range_helium_pressure + mid_range_nitrogen_pressure + settings.Constant_Pressure_Other_Gases - (starting_ambient_pressure + rate * mid_range_time)
+
+            if function_at_mid_range <= 0.0:
+                time_to_start_of_deco_zone = mid_range_time
+
+            if abs(differential_change) < 1.0E-3 or function_at_mid_range == 0.0:
+                break
+
+            if j == 100:
+                raise MaxIterationException('ERROR! ROOT SEARCH EXCEEDED MAXIMUM ITERATIONS')
+
+        # When a solution with the desired accuracy is found, the program jumps out
+        # of the loop to Line 170 and assigns the solution value for the individual
+        # compartment.
+
+        cpt_depth_start_of_deco_zone = (starting_ambient_pressure + rate * time_to_start_of_deco_zone) - barometric_pressure
+        # The overall solution will be the compartment with the maximum depth where
+        # gas tension equals ambient pressure (leading compartment).
+
+        Depth_Start_of_Deco_Zone = max(Depth_Start_of_Deco_Zone, cpt_depth_start_of_deco_zone)
+
+    return Depth_Start_of_Deco_Zone
 
 
 
