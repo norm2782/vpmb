@@ -260,8 +260,8 @@ class DiveState(object):
     def set_input_values(self, inputs):
         self.input_values = inputs
 
-    def set_settings(self, settings):
-        self.settings_values = settings
+    # def set_settings(self, settings):
+        # self.settings_values = settings
 
     def set_altitude_values(self, altitude_values):
         self.altitude_values = altitude_values
