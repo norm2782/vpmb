@@ -1329,8 +1329,7 @@ class DiveState(object):
                 # as a result of allowing a certain number of excess bubbles to form.
                 Deco_Phase_Volume_Time = self.Run_Time - Run_Time_Start_of_Deco_Zone
 
-                Surface_Phase_Volume_Time = calc_surface_phase_volume_time( Surface_Phase_Volume_Time
-                                                                          , self.Helium_Pressure, self.Nitrogen_Pressure
+                Surface_Phase_Volume_Time = calc_surface_phase_volume_time( self.Helium_Pressure, self.Nitrogen_Pressure
                                                                           , self.Helium_Time_Constant, self.Nitrogen_Time_Constant
                                                                           , self.Barometric_Pressure, settings)
 
@@ -1747,8 +1746,7 @@ def calc_deco_ceiling(helium_pressure, nitrogen_pressure, deco_gradient_he, deco
   return max(compartment_deco_ceiling)
 
 
-def calc_surface_phase_volume_time( Surface_Phase_Volume_Time
-                                  , helium_pressure, nitrogen_pressure
+def calc_surface_phase_volume_time( helium_pressure, nitrogen_pressure
                                   , helium_time_constant, nitrogen_time_constant
                                   , barometric_pressure, settings):
   # Purpose: This subprogram computes the surface portion of the total phase
@@ -1763,6 +1761,7 @@ def calc_surface_phase_volume_time( Surface_Phase_Volume_Time
   # for a more detailed explanation of this algorithm.
 
   Surface_Phase_Volume_Time = [0.0] * NUM_COMPARTMENTS
+
   surface_inspired_n2_pressure = (barometric_pressure - settings.Units.toWaterVaporPressure()) * SURFACE_FRACTION_INERT_GAS
   for i in COMPARTMENT_RANGE:
       if nitrogen_pressure[i] > surface_inspired_n2_pressure:
