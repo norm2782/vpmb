@@ -653,55 +653,15 @@ class DiveState(object):
             # so this will have very little impact on dives of normal length, but will
             # have major impact for saturation dives.
 
-            # START nuclear_regeneration
-
-            # Purpose: This subprogram calculates the regeneration of VPM critical
-            # radii that takes place over the dive time.  The regeneration time constant
-            # has a time scale of weeks so this will have very little impact on dives of
-            # normal length, but will have a major impact for saturation dives.
-
-            # First convert the maximum crushing pressure obtained for each compartment
-            # to Pascals.  Next, compute the ending radius for helium and nitrogen
-            # critical nuclei in each compartment.
-            for i in COMPARTMENT_RANGE:
-                crushing_pressure_pascals_he = (Max_Crushing_Pressure_He[i] / settings.Units.toUnitsFactor()) * ATM
-
-                crushing_pressure_pascals_n2 = (Max_Crushing_Pressure_N2[i] / settings.Units.toUnitsFactor()) * ATM
-
-                ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
-
-                ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
-                # A "regenerated" radius for each nucleus is now calculated based on the
-                # regeneration time constant.  This means that after application of
-                # crushing pressure and reduction in radius, a nucleus will slowly grow
-                # back to its original initial radius over a period of time.  This
-                # phenomenon is probabilistic in nature and depends on absolute temperature.
-                # It is independent of crushing pressure.
-                Regenerated_Radius_He[i] = Adjusted_Critical_Radius_He[i] + (ending_radius_he - Adjusted_Critical_Radius_He[i]) * exp(-self.Run_Time / settings.Regeneration_Time_Constant)
-
-                Regenerated_Radius_N2[i] = Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - Adjusted_Critical_Radius_N2[i]) * exp(-self.Run_Time / settings.Regeneration_Time_Constant)
-
-                # In order to preserve reference back to the initial critical radii after
-                # regeneration, an "adjusted crushing pressure" for the nuclei in each
-                # compartment must be computed.  In other words, this is the value of
-                # crushing pressure that would have reduced the original nucleus to the
-                # to the present radius had regeneration not taken place.  The ratio
-                # for adjusting crushing pressure is obtained from algebraic manipulation
-                # of the standard VPM equations.  The adjusted crushing pressure, in lieu
-                # of the original crushing pressure, is then applied in the VPM Critical
-                # Volume Algorithm and the VPM Repetitive Algorithm.
-
-                crush_pressure_adjust_ratio_he = (ending_radius_he * (Adjusted_Critical_Radius_He[i] - Regenerated_Radius_He[i])) / (Regenerated_Radius_He[i] * (Adjusted_Critical_Radius_He[i] - ending_radius_he))
-
-                crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (Adjusted_Critical_Radius_N2[i] - Regenerated_Radius_N2[i])) / (Regenerated_Radius_N2[i] * (Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
-
-                adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
-                adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
-
-                Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * settings.Units.toUnitsFactor()
-                Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * settings.Units.toUnitsFactor()
-
-            # END nuclear_regeneration
+            regen = nuclear_regeneration( Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
+                                        , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                                        , Adjusted_Crushing_Pressure_He, Adjusted_Crushing_Pressure_N2
+                                        , Regenerated_Radius_He, Regenerated_Radius_N2
+                                        , self.Run_Time, settings);
+            Regenerated_Radius_He = regen[0]
+            Regenerated_Radius_N2 = regen[1]
+            Adjusted_Crushing_Pressure_He = regen[2]
+            Adjusted_Crushing_Pressure_N2 = regen[3]
 
             #   CALCULATE INITIAL ALLOWABLE GRADIENTS FOR ASCENT
             #   This is based on the maximum effective crushing pressure on critical radii
@@ -1847,6 +1807,62 @@ def gas_loadings_surface_interval( Helium_Pressure, Nitrogen_Pressure
 
     # END gas_loadings_surface_interval
     return (Helium_Pressure, Nitrogen_Pressure)
+
+def nuclear_regeneration( Max_Crushing_Pressure_He, Max_Crushing_Pressure_N2
+                        , Adjusted_Critical_Radius_He, Adjusted_Critical_Radius_N2
+                        , Adjusted_Crushing_Pressure_He, Adjusted_Crushing_Pressure_N2
+                        , Regenerated_Radius_He, Regenerated_Radius_N2
+                        , Run_Time, settings):
+    # Purpose: This subprogram calculates the regeneration of VPM critical
+    # radii that takes place over the dive time.  The regeneration time constant
+    # has a time scale of weeks so this will have very little impact on dives of
+    # normal length, but will have a major impact for saturation dives.
+
+    # First convert the maximum crushing pressure obtained for each compartment
+    # to Pascals.  Next, compute the ending radius for helium and nitrogen
+    # critical nuclei in each compartment.
+    for i in COMPARTMENT_RANGE:
+        crushing_pressure_pascals_he = (Max_Crushing_Pressure_He[i] / settings.Units.toUnitsFactor()) * ATM
+
+        crushing_pressure_pascals_n2 = (Max_Crushing_Pressure_N2[i] / settings.Units.toUnitsFactor()) * ATM
+
+        ending_radius_he = 1.0 / (crushing_pressure_pascals_he / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_He[i])
+
+        ending_radius_n2 = 1.0 / (crushing_pressure_pascals_n2 / (2.0 * (settings.Skin_Compression_GammaC - settings.Surface_Tension_Gamma)) + 1.0 / Adjusted_Critical_Radius_N2[i])
+        # A "regenerated" radius for each nucleus is now calculated based on the
+        # regeneration time constant.  This means that after application of
+        # crushing pressure and reduction in radius, a nucleus will slowly grow
+        # back to its original initial radius over a period of time.  This
+        # phenomenon is probabilistic in nature and depends on absolute temperature.
+        # It is independent of crushing pressure.
+        Regenerated_Radius_He[i] = Adjusted_Critical_Radius_He[i] + (ending_radius_he - Adjusted_Critical_Radius_He[i]) * exp(-Run_Time / settings.Regeneration_Time_Constant)
+
+        Regenerated_Radius_N2[i] = Adjusted_Critical_Radius_N2[i] + (ending_radius_n2 - Adjusted_Critical_Radius_N2[i]) * exp(-Run_Time / settings.Regeneration_Time_Constant)
+
+        # In order to preserve reference back to the initial critical radii after
+        # regeneration, an "adjusted crushing pressure" for the nuclei in each
+        # compartment must be computed.  In other words, this is the value of
+        # crushing pressure that would have reduced the original nucleus to the
+        # to the present radius had regeneration not taken place.  The ratio
+        # for adjusting crushing pressure is obtained from algebraic manipulation
+        # of the standard VPM equations.  The adjusted crushing pressure, in lieu
+        # of the original crushing pressure, is then applied in the VPM Critical
+        # Volume Algorithm and the VPM Repetitive Algorithm.
+
+        crush_pressure_adjust_ratio_he = (ending_radius_he * (Adjusted_Critical_Radius_He[i] - Regenerated_Radius_He[i])) / (Regenerated_Radius_He[i] * (Adjusted_Critical_Radius_He[i] - ending_radius_he))
+
+        crush_pressure_adjust_ratio_n2 = (ending_radius_n2 * (Adjusted_Critical_Radius_N2[i] - Regenerated_Radius_N2[i])) / (Regenerated_Radius_N2[i] * (Adjusted_Critical_Radius_N2[i] - ending_radius_n2))
+
+        adj_crush_pressure_he_pascals = crushing_pressure_pascals_he * crush_pressure_adjust_ratio_he
+        adj_crush_pressure_n2_pascals = crushing_pressure_pascals_n2 * crush_pressure_adjust_ratio_n2
+
+        Adjusted_Crushing_Pressure_He[i] = (adj_crush_pressure_he_pascals / ATM) * settings.Units.toUnitsFactor()
+        Adjusted_Crushing_Pressure_N2[i] = (adj_crush_pressure_n2_pascals / ATM) * settings.Units.toUnitsFactor()
+
+    return ( Regenerated_Radius_He, Regenerated_Radius_N2
+           , Adjusted_Crushing_Pressure_He, Adjusted_Crushing_Pressure_N2
+           )
+
 
 
 
